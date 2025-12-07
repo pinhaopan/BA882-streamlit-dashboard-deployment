@@ -633,6 +633,7 @@ if page == "1. Overview":
             
             if abs(change) > 2:
                 direction = "increased" if change > 0 else "decreased"
+                st.info(f"📊 **Scoring trend:** Points have {direction} by {abs(change):.1f} from early season ({early_avg:.1f} pts) to late season ({late_avg:.1f} pts)")
                 with st.expander("ℹ️ About this analysis", expanded=False):
                     st.markdown(f"""
                     **How we calculate seasonal trends:**
@@ -642,8 +643,7 @@ if page == "1. Overview":
                     We compare these two periods to identify how scoring patterns change throughout the season. 
                     Factors like weather, defensive improvements, and injuries often affect late-season scoring.
                     """)
-                st.info(f"📊 **Scoring trend:** Points have {direction} by {abs(change):.1f} from early season ({early_avg:.1f} pts) to late season ({late_avg:.1f} pts)")
-    
+
     with tab2:
         # Home advantage over time
         fig_home = go.Figure()
@@ -890,7 +890,7 @@ if page == "1. Overview":
     # 1-7) League Heatmap – team vs median
     # ========================================================================
     st.markdown("### 🔥 League Performance Heatmap (vs Median)")
-    st.caption("💡 Green = above median performance, Red = below median. Each cell shows team performance relative to league median (1.0 = median)")
+    st.caption("💡 Compare each team's performance across all metrics relative to the league median. Green = above median performance, Red = below median. Each cell shows team performance relative to league median (1.0 = median)")
     
     # Add option to filter top N teams
     show_all = st.checkbox("Show all teams", value=False)
@@ -923,7 +923,7 @@ if page == "1. Overview":
         heat_matrix,
         aspect="auto",
         color_continuous_scale="RdYlGn",
-        origin="lower",
+        origin="upper",
         labels=dict(color="Relative to Median"),
         title=f"Team Performance vs League Median ({'Top ' + str(top_n) if not show_all else 'All'} Teams)",
         zmin=0.5,
@@ -934,6 +934,56 @@ if page == "1. Overview":
     
     st.plotly_chart(heat_fig, use_container_width=True)
     
+    with st.expander("📖 How to Read This Heatmap (Click to Expand)", expanded=False):
+        st.markdown("""
+        ### Understanding the Heatmap
+        
+        #### 🎨 **Color Coding**
+        - 🟢 **Green cells**: Performance **above** league median (stronger)
+        - 🟡 **Yellow cells**: Performance **near** league median (average)  
+        - 🔴 **Red cells**: Performance **below** league median (weaker)
+        
+        #### 📊 **Team Ranking (Y-axis / Left Side)**
+        - Teams are **sorted by win percentage**
+        - Reading from **bottom to top**: worst win% → best win%
+        - Teams at the **top** have the best records
+        - Teams at the **bottom** have the worst records
+        
+        #### 📏 **Understanding the Values**
+        Each cell contains a number representing **relative performance to median**:
+        - **1.0** = Exactly at league median
+        - **1.25** = 25% better than median
+        - **0.75** = 25% worse than median
+        - **Range**: 0.5 (very weak) to 1.5+ (very strong)
+        
+        #### 🔍 **How to Analyze**
+        
+        **Reading Horizontally (by Row):**
+        - Shows one team's performance across all metrics
+        - Example: If Team A has mostly green cells → well-rounded strong team
+        - Example: If Team B has green offense but red defense → unbalanced team
+        
+        **Reading Vertically (by Column):**
+        - Shows how all teams perform in one specific metric
+        - Example: If a column is mostly red → this is a weak area league-wide
+        - Example: If a column has mixed colors → high variance in this skill
+        
+        #### 💡 **Practical Examples**
+        
+        | Pattern | Meaning |
+        |---------|---------|
+        | 🟢🟢🟢🟢 (All green row) | Elite team, strong in all areas |
+        | 🔴🔴🔴🔴 (All red row) | Struggling team, weak across the board |
+        | 🟢🟢🔴🔴 (Mixed row) | Specialized team (e.g., good offense, poor defense) |
+        | 🟢 vertical column | League-wide strength (e.g., everyone scores well) |
+        | 🔴 vertical column | League-wide weakness (e.g., everyone struggles defensively) |
+        
+        #### 🎯 **Quick Tips**
+        - **Hover** over any cell to see exact values
+        - Look for **clusters of color** to identify team archetypes
+        - Compare teams at **similar win%** to find hidden differences
+        """)
+        
     st.info("💡 **How to read:** Values > 1.0 (green) indicate above-median performance. Values < 1.0 (red) indicate below-median performance.")
 
 # ============================================================================

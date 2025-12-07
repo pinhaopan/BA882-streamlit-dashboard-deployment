@@ -47,6 +47,11 @@ def run_query(sql: str, params: tuple | None = None) -> pd.DataFrame:
     conn = get_connection()
     if params is None:
         return conn.execute(sql).fetch_df()
+    # DuckDB uses $1, $2, etc. for parameter placeholders, not ?
+    # We need to replace ? with $1, $2, etc.
+    param_count = sql.count('?')
+    for i in range(param_count):
+        sql = sql.replace('?', f'${i+1}', 1)
     return conn.execute(sql, params).fetch_df()
 
 

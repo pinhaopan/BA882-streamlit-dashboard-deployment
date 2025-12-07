@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 from sklearn.cluster import KMeans
 
@@ -147,6 +148,156 @@ def load_games_meta() -> pd.DataFrame:
 
 
 # ============================================================================
+# NEW: Season Overview Data Functions
+# ============================================================================
+@st.cache_data(show_spinner="Loading comprehensive season overview...")
+def load_season_overview() -> dict:
+    """Load comprehensive season overview metrics from pairwise_comparison and dim_games"""
+    
+    # 1. From pairwise_comparison - get game-level statistics
+    games_sql = """
+        SELECT 
+            COUNT(*) AS total_games,
+            AVG(home_score + away_score) AS avg_total_points,
+            AVG(ABS(home_score - away_score)) AS avg_margin,
+            MAX(home_score + away_score) AS highest_total,
+            MIN(home_score + away_score) AS lowest_total,
+            MAX(ABS(home_score - away_score)) AS biggest_margin,
+            MIN(ABS(home_score - away_score)) AS closest_margin,
+            SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_win_pct
+        FROM bt.pairwise_comparison
+    """
+    games_stats = run_query(games_sql).iloc[0]
+    
+    # 2. From dim_games - get time ranges and weeks
+    time_sql = """
+        SELECT 
+            MIN(start_date) AS season_start,
+            MAX(start_date) AS latest_game,
+            MIN(week) AS first_week,
+            MAX(week) AS latest_week,
+            COUNT(DISTINCT week) AS weeks_played
+        FROM real_deal.dim_games
+        WHERE season = ?
+    """
+    time_stats = run_query(time_sql, (SEASON,)).iloc[0]
+    
+    # 3. From team_stats - get total teams and update timestamp
+    team_sql = """
+        SELECT 
+            COUNT(DISTINCT team_id) AS total_teams,
+            MAX(updated_at) AS data_updated_at
+        FROM bt.team_stats
+    """
+    team_stats = run_query(team_sql).iloc[0]
+    
+    return {
+        'total_games': int(games_stats['total_games']),
+        'total_teams': int(team_stats['total_teams']),
+        'avg_total_points': float(games_stats['avg_total_points']),
+        'avg_margin': float(games_stats['avg_margin']),
+        'home_win_pct': float(games_stats['home_win_pct']),
+        'season_start': time_stats['season_start'],
+        'latest_game': time_stats['latest_game'],
+        'first_week': int(time_stats['first_week']),
+        'latest_week': int(time_stats['latest_week']),
+        'weeks_played': int(time_stats['weeks_played']),
+        'data_updated_at': team_stats['data_updated_at'],
+        'highest_total': int(games_stats['highest_total']),
+        'lowest_total': int(games_stats['lowest_total']),
+        'biggest_margin': int(games_stats['biggest_margin']),
+        'closest_margin': int(games_stats['closest_margin']),
+    }
+
+
+@st.cache_data(show_spinner="Loading highlight games...")
+def load_highlight_games():
+    """Load notable games for highlights section"""
+    sql = """
+        SELECT 
+            pc.game_id,
+            pc.home_score,
+            pc.away_score,
+            pc.score_margin,
+            pc.home_total_yards,
+            pc.away_total_yards,
+            ht.display_name AS home_team,
+            at.display_name AS away_team,
+            g.start_date,
+            g.week
+        FROM bt.pairwise_comparison AS pc
+        JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+        JOIN real_deal.dim_teams AS ht ON pc.home_team_id = ht.id
+        JOIN real_deal.dim_teams AS at ON pc.away_team_id = at.id
+        WHERE g.season = ?
+        ORDER BY g.start_date DESC
+    """
+    df = run_query(sql, (SEASON,))
+    df['total_points'] = df['home_score'] + df['away_score']
+    df['point_diff'] = df['score_margin'].abs()
+    return df
+
+
+@st.cache_data(show_spinner="Loading weekly trends...")
+def load_weekly_trends():
+    """Load game statistics aggregated by week"""
+    sql = """
+        SELECT 
+            g.week,
+            COUNT(*) AS games_played,
+            AVG(pc.home_score + pc.away_score) AS avg_total_points,
+            AVG(pc.home_score) AS avg_home_score,
+            AVG(pc.away_score) AS avg_away_score,
+            AVG(ABS(pc.home_score - pc.away_score)) AS avg_margin,
+            SUM(CASE WHEN pc.home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_win_rate,
+            SUM(CASE WHEN ABS(pc.home_score - pc.away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS close_game_rate
+        FROM bt.pairwise_comparison AS pc
+        JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+        WHERE g.season = ?
+        GROUP BY g.week
+        ORDER BY g.week
+    """
+    return run_query(sql, (SEASON,))
+
+
+@st.cache_data(show_spinner="Loading game distributions...")
+def load_game_distributions():
+    """Load individual game statistics for distribution analysis"""
+    sql = """
+        SELECT 
+            pc.home_score,
+            pc.away_score,
+            pc.home_score + pc.away_score AS total_points,
+            ABS(pc.home_score - pc.away_score) AS point_margin,
+            pc.home_total_yards,
+            pc.away_total_yards,
+            pc.home_turnovers,
+            pc.away_turnovers,
+            g.week
+        FROM bt.pairwise_comparison AS pc
+        JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+        WHERE g.season = ?
+    """
+    return run_query(sql, (SEASON,))
+
+
+@st.cache_data(show_spinner="Calculating interesting statistics...")
+def calculate_interesting_stats():
+    """Calculate interesting season-wide statistics"""
+    sql = """
+        SELECT 
+            COUNT(*) AS total_games,
+            SUM(CASE WHEN ABS(home_score - away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS close_game_pct,
+            SUM(CASE WHEN ABS(home_score - away_score) <= 3 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS one_score_pct,
+            SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_advantage,
+            AVG(home_score + away_score) AS avg_combined,
+            SUM(CASE WHEN home_score = 0 OR away_score = 0 THEN 1 ELSE 0 END) AS shutouts
+        FROM bt.pairwise_comparison
+    """
+    return run_query(sql).iloc[0]
+
+
+# ============================================================================
 # Utility Functions – Percentile / Colors / Normalization
 # ============================================================================
 def compute_percentiles(df: pd.DataFrame, metric_cols: List[str]) -> pd.DataFrame:
@@ -231,70 +382,371 @@ page = st.sidebar.radio(
 # ============================================================================
 if page == "1. Overview":
     st.subheader("📊 2025 Season Overview")
-
-    with st.spinner("Loading league overview..."):
+    
+    # Section description
+    st.markdown("""
+    Get a comprehensive view of the 2025 NCAA Football season with key statistics, 
+    trends over time, and notable performances.
+    """)
+    
+    with st.spinner("Loading season data..."):
+        # Load all necessary data
+        overview_stats = load_season_overview()
+        df_highlights = load_highlight_games()
+        df_weekly = load_weekly_trends()
+        df_game_dist = load_game_distributions()
+        interesting_stats = calculate_interesting_stats()
         df_stats, benchmark = load_team_stats_with_benchmark()
-        df_games = load_games_meta()
-
-    # 1-1) Overall KPIs
-    col1, col2, col3 = st.columns(3)
-    n_teams = df_stats["team_id"].nunique()
-    n_games = df_games["id"].nunique()
-    avg_win_pct = df_stats["win_pct"].mean()
-
-    col1.metric("Teams in 2025", n_teams)
-    col2.metric("Games in 2025", n_games)
-    col3.metric("Average Win %", f"{avg_win_pct:.3f}")
-
+    
+    # Data freshness indicator
+    st.caption(f"📊 Data as of: {overview_stats['data_updated_at'].strftime('%B %d, %Y')}")
+    st.caption(f"📅 Season: {overview_stats['season_start'].strftime('%b %d')} → {overview_stats['latest_game'].strftime('%b %d, %Y')} | Weeks {overview_stats['first_week']}-{overview_stats['latest_week']}")
+    
     st.markdown("---")
-
-    # 1-2) Metric Distribution (Histogram / Box)
-    st.markdown("### 📈 League KPI Distribution")
-
+    
+    # ========================================================================
+    # 1-1) Season KPIs
+    # ========================================================================
+    st.markdown("### 📈 Season at a Glance")
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Teams", overview_stats['total_teams'])
+    col2.metric("Games Played", overview_stats['total_games'])
+    col3.metric("Weeks Played", f"{overview_stats['first_week']}-{overview_stats['latest_week']}")
+    col4.metric("Avg Total Points", f"{overview_stats['avg_total_points']:.1f}")
+    col5.metric("Home Win %", f"{overview_stats['home_win_pct']:.1%}")
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # 1-2) Season Highlights
+    # ========================================================================
+    st.markdown("### 🔥 Season Highlights")
+    
+    # Find notable games
+    highest_scoring = df_highlights.nlargest(1, 'total_points').iloc[0]
+    lowest_scoring = df_highlights.nsmallest(1, 'total_points').iloc[0]
+    biggest_blowout = df_highlights.nlargest(1, 'point_diff').iloc[0]
+    closest_game = df_highlights.nsmallest(1, 'point_diff').iloc[0]
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown("#### 🔥 Highest Scoring")
+        st.metric(
+            label=f"{highest_scoring['home_team']} vs {highest_scoring['away_team']}",
+            value=f"{int(highest_scoring['total_points'])} pts"
+        )
+        st.caption(f"{int(highest_scoring['home_score'])}-{int(highest_scoring['away_score'])} | Week {int(highest_scoring['week'])}")
+    
+    with col2:
+        st.markdown("#### 🛡️ Defensive Battle")
+        st.metric(
+            label=f"{lowest_scoring['home_team']} vs {lowest_scoring['away_team']}",
+            value=f"{int(lowest_scoring['total_points'])} pts"
+        )
+        st.caption(f"{int(lowest_scoring['home_score'])}-{int(lowest_scoring['away_score'])} | Week {int(lowest_scoring['week'])}")
+    
+    with col3:
+        st.markdown("#### ⚡ Biggest Blowout")
+        st.metric(
+            label=f"{biggest_blowout['home_team']} vs {biggest_blowout['away_team']}",
+            value=f"{int(biggest_blowout['point_diff'])} pt margin"
+        )
+        st.caption(f"{int(biggest_blowout['home_score'])}-{int(biggest_blowout['away_score'])} | Week {int(biggest_blowout['week'])}")
+    
+    with col4:
+        st.markdown("#### 🎯 Nail-Biter")
+        st.metric(
+            label=f"{closest_game['home_team']} vs {closest_game['away_team']}",
+            value=f"{int(closest_game['point_diff'])} pt margin"
+        )
+        st.caption(f"{int(closest_game['home_score'])}-{int(closest_game['away_score'])} | Week {int(closest_game['week'])}")
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # 1-3) Did You Know?
+    # ========================================================================
+    st.markdown("### 💡 Did You Know?")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    col1.metric(
+        "Close Games (≤7 pts)",
+        f"{interesting_stats['close_game_pct']:.1%}",
+        help="Percentage of games decided by one touchdown or less"
+    )
+    
+    col2.metric(
+        "One-Score Games (≤3 pts)",
+        f"{interesting_stats['one_score_pct']:.1%}",
+        help="Percentage of games decided by a field goal or less"
+    )
+    
+    col3.metric(
+        "Home Field Advantage",
+        f"{interesting_stats['home_advantage']:.1%}",
+        delta=f"{(interesting_stats['home_advantage'] - 0.5) * 100:+.1f}% vs 50%",
+        help="Home team win percentage (50% would indicate no advantage)"
+    )
+    
+    col4.metric(
+        "Shutouts",
+        f"{int(interesting_stats['shutouts'])}",
+        help="Number of games where one team scored 0 points"
+    )
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # 1-4) Weekly Trends
+    # ========================================================================
+    st.markdown("### 📈 Season Trends Over Time")
+    
+    tab1, tab2, tab3 = st.tabs(["📊 Games & Scoring", "🏠 Home Advantage", "⚔️ Competitiveness"])
+    
+    with tab1:
+        # Dual-axis chart: games played + avg scoring
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # Bar chart for games played
+        fig.add_trace(
+            go.Bar(
+                x=df_weekly['week'],
+                y=df_weekly['games_played'],
+                name="Games Played",
+                marker_color='lightblue',
+                opacity=0.6
+            ),
+            secondary_y=False
+        )
+        
+        # Line chart for avg total points
+        fig.add_trace(
+            go.Scatter(
+                x=df_weekly['week'],
+                y=df_weekly['avg_total_points'],
+                name="Avg Total Points",
+                mode='lines+markers',
+                line=dict(color='red', width=3),
+                marker=dict(size=8)
+            ),
+            secondary_y=True
+        )
+        
+        fig.update_xaxes(title_text="Week")
+        fig.update_yaxes(title_text="Number of Games", secondary_y=False)
+        fig.update_yaxes(title_text="Average Total Points", secondary_y=True)
+        fig.update_layout(
+            title="Games Played and Scoring by Week",
+            hovermode='x unified',
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Insights
+        busiest_week = df_weekly.loc[df_weekly['games_played'].idxmax()]
+        st.info(f"🔥 **Busiest week:** Week {int(busiest_week['week'])} with {int(busiest_week['games_played'])} games")
+        
+        # Scoring trend
+        early_weeks = df_weekly[df_weekly['week'] <= 4]
+        late_weeks = df_weekly[df_weekly['week'] >= df_weekly['week'].max() - 3]
+        
+        if len(early_weeks) > 0 and len(late_weeks) > 0:
+            early_avg = early_weeks['avg_total_points'].mean()
+            late_avg = late_weeks['avg_total_points'].mean()
+            change = late_avg - early_avg
+            
+            if abs(change) > 2:
+                direction = "increased" if change > 0 else "decreased"
+                st.info(f"📊 **Scoring trend:** Points have {direction} by {abs(change):.1f} from early season ({early_avg:.1f} pts) to late season ({late_avg:.1f} pts)")
+    
+    with tab2:
+        # Home advantage over time
+        fig_home = go.Figure()
+        
+        fig_home.add_trace(go.Scatter(
+            x=df_weekly['week'],
+            y=df_weekly['home_win_rate'] * 100,
+            mode='lines+markers',
+            name='Home Win %',
+            line=dict(width=3, color='green'),
+            marker=dict(size=10),
+            fill='tonexty',
+            fillcolor='rgba(0,255,0,0.1)'
+        ))
+        
+        # Add 50% reference line
+        fig_home.add_hline(
+            y=50,
+            line_dash="dash",
+            line_color="gray",
+            annotation_text="50% (No Advantage)",
+            annotation_position="right"
+        )
+        
+        fig_home.update_layout(
+            title="Home Team Win Percentage by Week",
+            xaxis_title="Week",
+            yaxis_title="Home Win %",
+            yaxis_range=[0, 100],
+            height=500,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig_home, use_container_width=True)
+        
+        # Insights
+        avg_home_adv = df_weekly['home_win_rate'].mean()
+        st.info(f"🏠 **Overall home advantage:** {avg_home_adv:.1%} (vs expected 50%)")
+        
+        # Find weeks with strongest/weakest home advantage
+        strongest_home = df_weekly.loc[df_weekly['home_win_rate'].idxmax()]
+        weakest_home = df_weekly.loc[df_weekly['home_win_rate'].idxmin()]
+        
+        col_a, col_b = st.columns(2)
+        col_a.metric(
+            "Strongest Home Advantage",
+            f"Week {int(strongest_home['week'])}",
+            f"{strongest_home['home_win_rate']:.1%}"
+        )
+        col_b.metric(
+            "Weakest Home Advantage",
+            f"Week {int(weakest_home['week'])}",
+            f"{weakest_home['home_win_rate']:.1%}"
+        )
+    
+    with tab3:
+        # Competitiveness metrics
+        fig_comp = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # Avg margin (lower = more competitive)
+        fig_comp.add_trace(
+            go.Scatter(
+                x=df_weekly['week'],
+                y=df_weekly['avg_margin'],
+                name="Avg Point Margin",
+                mode='lines+markers',
+                line=dict(color='orange', width=3),
+                marker=dict(size=8)
+            ),
+            secondary_y=False
+        )
+        
+        # Close game rate (higher = more competitive)
+        fig_comp.add_trace(
+            go.Scatter(
+                x=df_weekly['week'],
+                y=df_weekly['close_game_rate'] * 100,
+                name="Close Game % (≤7 pts)",
+                mode='lines+markers',
+                line=dict(color='green', width=3),
+                marker=dict(size=8)
+            ),
+            secondary_y=True
+        )
+        
+        fig_comp.update_xaxes(title_text="Week")
+        fig_comp.update_yaxes(title_text="Avg Point Margin", secondary_y=False)
+        fig_comp.update_yaxes(title_text="Close Game %", secondary_y=True, range=[0, 100])
+        fig_comp.update_layout(
+            title="Game Competitiveness by Week",
+            height=500,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig_comp, use_container_width=True)
+        
+        # Find most competitive week
+        most_comp_week = df_weekly.loc[df_weekly['avg_margin'].idxmin()]
+        most_close_week = df_weekly.loc[df_weekly['close_game_rate'].idxmax()]
+        
+        st.info(f"⚔️ **Most competitive week (smallest avg margin):** Week {int(most_comp_week['week'])} with {most_comp_week['avg_margin']:.1f} pt average margin")
+        st.info(f"🎯 **Week with most close games:** Week {int(most_close_week['week'])} with {most_close_week['close_game_rate']:.1%} of games decided by ≤7 pts")
+    
+    st.markdown("---")
+    
+    # ========================================================================
+    # 1-5) Game Distribution
+    # ========================================================================
+    st.markdown("### 📊 Game Statistics Distribution")
+    st.caption("💡 View the distribution of key game-level metrics across all games this season")
+    
+    game_metrics = {
+        'total_points': 'Total Points per Game',
+        'point_margin': 'Point Differential',
+        'home_score': 'Home Team Score',
+        'away_score': 'Away Team Score',
+        'home_total_yards': 'Home Total Yards',
+        'away_total_yards': 'Away Total Yards',
+    }
+    
     metric_for_dist = st.selectbox(
-        "Choose a metric to display:",
-        TEAM_METRICS,
-        format_func=metric_label,
+        "Choose a game metric to visualize:",
+        list(game_metrics.keys()),
+        format_func=lambda x: game_metrics[x],
+        key="game_dist_metric"
     )
-
-    dist_col1, dist_col2 = st.columns(2)
-
-    # Histogram
-    hist_fig = px.histogram(
-        df_stats,
-        x=metric_for_dist,
-        nbins=20,
-        title=f"{metric_label(metric_for_dist)} – Distribution",
-    )
-    hist_fig.add_vline(
-        x=benchmark[metric_for_dist],
-        line_dash="dash",
-        annotation_text="League Median",
-        annotation_position="top left",
-    )
-    dist_col1.plotly_chart(hist_fig, use_container_width=True)
-
-    # Box Plot
-    if "conference" in df_stats.columns:
-        box_fig = px.box(
-            df_stats,
-            x="conference",
-            y=metric_for_dist,
-            title=f"{metric_label(metric_for_dist)} by Conference",
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Histogram
+        fig_hist = px.histogram(
+            df_game_dist,
+            x=metric_for_dist,
+            nbins=25,
+            title=f"{game_metrics[metric_for_dist]} Distribution",
+            labels={metric_for_dist: game_metrics[metric_for_dist]}
         )
-    else:
-        box_fig = px.box(
-            df_stats,
-            y=metric_for_dist,
-            title=f"{metric_label(metric_for_dist)} – Box Plot",
+        
+        # Add median line
+        median_val = df_game_dist[metric_for_dist].median()
+        fig_hist.add_vline(
+            x=median_val,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Median: {median_val:.1f}",
+            annotation_position="top right"
         )
-    dist_col2.plotly_chart(box_fig, use_container_width=True)
-
+        
+        st.plotly_chart(fig_hist, use_container_width=True)
+    
+    with col2:
+        # Box plot by week
+        fig_box = px.box(
+            df_game_dist,
+            x='week',
+            y=metric_for_dist,
+            title=f"{game_metrics[metric_for_dist]} by Week",
+            labels={
+                'week': 'Week',
+                metric_for_dist: game_metrics[metric_for_dist]
+            }
+        )
+        st.plotly_chart(fig_box, use_container_width=True)
+    
+    # Summary statistics
+    st.markdown("#### Summary Statistics")
+    summary = df_game_dist[metric_for_dist].describe()
+    cols = st.columns(6)
+    cols[0].metric("Mean", f"{summary['mean']:.1f}")
+    cols[1].metric("Median", f"{summary['50%']:.1f}")
+    cols[2].metric("Std Dev", f"{summary['std']:.1f}")
+    cols[3].metric("Min", f"{summary['min']:.1f}")
+    cols[4].metric("Max", f"{summary['max']:.1f}")
+    cols[5].metric("Range", f"{summary['max'] - summary['min']:.1f}")
+    
     st.markdown("---")
-
-    # 1-3) Top Performers Table
-    st.markdown("### 🏅 Top 10 Teams by Metric")
-
+    
+    # ========================================================================
+    # 1-6) Top Performers Table
+    # ========================================================================
+    st.markdown("### 🏅 Top & Bottom Teams by Metric")
+    st.caption("💡 Team-level performance rankings based on season averages")
+    
     metric_for_top = st.selectbox(
         "Choose ranking metric:",
         TEAM_METRICS,
@@ -302,49 +754,100 @@ if page == "1. Overview":
         format_func=metric_label,
         key="overview_top_metric",
     )
-
+    
     df_pct = compute_percentiles(df_stats, [metric_for_top])
     m_col = metric_for_top
     higher_is_better = HIGHER_IS_BETTER.get(metric_for_top, True)
-
-    df_top = df_pct[["team_name", m_col, m_col + "_pctile"]].dropna()
-    df_top = df_top.sort_values(by=m_col, ascending=not higher_is_better).head(10)
-
-    st.dataframe(
-        df_top.rename(
-            columns={
-                "team_name": "Team",
-                m_col: metric_label(m_col),
-                m_col + "_pctile": "Percentile (0-100)",
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-
+    
+    col_top, col_bottom = st.columns(2)
+    
+    with col_top:
+        st.markdown("#### 🏆 Top 10")
+        df_top = df_pct[["team_name", m_col, m_col + "_pctile"]].dropna()
+        df_top = df_top.sort_values(by=m_col, ascending=not higher_is_better).head(10)
+        df_top.insert(0, 'Rank', range(1, len(df_top) + 1))
+        
+        st.dataframe(
+            df_top.rename(
+                columns={
+                    "team_name": "Team",
+                    m_col: metric_label(m_col),
+                    m_col + "_pctile": "Percentile",
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    
+    with col_bottom:
+        st.markdown("#### 📉 Bottom 10")
+        df_bottom = df_pct[["team_name", m_col, m_col + "_pctile"]].dropna()
+        df_bottom = df_bottom.sort_values(by=m_col, ascending=higher_is_better).head(10)
+        df_bottom.insert(0, 'Rank', range(len(df_stats) - len(df_bottom) + 1, len(df_stats) + 1))
+        
+        st.dataframe(
+            df_bottom.rename(
+                columns={
+                    "team_name": "Team",
+                    m_col: metric_label(m_col),
+                    m_col + "_pctile": "Percentile",
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    
     st.markdown("---")
-
-    # 1-4) League Heatmap – team vs median
+    
+    # ========================================================================
+    # 1-7) League Heatmap – team vs median
+    # ========================================================================
     st.markdown("### 🔥 League Performance Heatmap (vs Median)")
-
-    heat_df = df_stats[["team_name"] + TEAM_METRICS].copy()
+    st.caption("💡 Green = above median performance, Red = below median. Each cell shows team performance relative to league median (1.0 = median)")
+    
+    # Add option to filter top N teams
+    show_all = st.checkbox("Show all teams", value=False)
+    
+    if not show_all:
+        top_n = st.slider(
+            "Show top N teams (by win%)",
+            min_value=20,
+            max_value=len(df_stats),
+            value=min(50, len(df_stats)),
+            step=10
+        )
+        df_for_heat = df_stats.nlargest(top_n, 'win_pct')
+    else:
+        df_for_heat = df_stats
+    
+    heat_df = df_for_heat[["team_name"] + TEAM_METRICS].copy()
     for col in TEAM_METRICS:
         if HIGHER_IS_BETTER.get(col, True):
             heat_df[col] = heat_df[col] / benchmark[col]
         else:
             heat_df[col] = benchmark[col] / heat_df[col]
-
+    
     heat_matrix = heat_df.set_index("team_name")[TEAM_METRICS]
-
+    
+    # Rename columns for better readability
+    heat_matrix.columns = [metric_label(c) for c in TEAM_METRICS]
+    
     heat_fig = px.imshow(
         heat_matrix,
         aspect="auto",
         color_continuous_scale="RdYlGn",
         origin="lower",
         labels=dict(color="Relative to Median"),
-        title="Team Performance vs League Median (>1 = above median)",
+        title=f"Team Performance vs League Median ({'Top ' + str(top_n) if not show_all else 'All'} Teams)",
+        zmin=0.5,
+        zmax=1.5
     )
+    
+    heat_fig.update_layout(height=max(400, len(heat_matrix) * 20))
+    
     st.plotly_chart(heat_fig, use_container_width=True)
+    
+    st.info("💡 **How to read:** Values > 1.0 (green) indicate above-median performance. Values < 1.0 (red) indicate below-median performance.")
 
 
 # ============================================================================

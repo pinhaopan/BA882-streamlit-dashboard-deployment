@@ -247,13 +247,13 @@ def load_highlight_games():
                 pc.home_total_yards,
                 pc.away_total_yards,
                 ht.display_name AS home_team,
-                at.display_name AS away_team,
+                away.display_name AS away_team,
                 g.start_date,
                 g.week
             FROM bt.pairwise_comparisons AS pc
             JOIN real_deal.dim_games AS g ON pc.game_id = g.id
             JOIN real_deal.dim_teams AS ht ON pc.home_team_id = ht.id
-            JOIN real_deal.dim_teams AS at ON pc.away_team_id = at.id
+            JOIN real_deal.dim_teams AS away ON pc.away_team_id = away.id
             WHERE g.season = {SEASON}
             ORDER BY g.start_date DESC
         """

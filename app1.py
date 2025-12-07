@@ -502,33 +502,37 @@ if page == "1. Overview":
     with col1:
         st.markdown("#### 🔥 Highest Scoring")
         st.metric(
-            label=f"{highest_scoring['home_team']} vs {highest_scoring['away_team']}",
+            label="Total Points",
             value=f"{int(highest_scoring['total_points'])} pts"
         )
+        st.caption(f"{highest_scoring['home_team']} vs {highest_scoring['away_team']}")
         st.caption(f"{int(highest_scoring['home_score'])}-{int(highest_scoring['away_score'])} | Week {int(highest_scoring['week'])}")
-    
+
     with col2:
         st.markdown("#### 🛡️ Defensive Battle")
         st.metric(
-            label=f"{lowest_scoring['home_team']} vs {lowest_scoring['away_team']}",
+            label="Total Points",
             value=f"{int(lowest_scoring['total_points'])} pts"
         )
+        st.caption(f"{lowest_scoring['home_team']} vs {lowest_scoring['away_team']}")
         st.caption(f"{int(lowest_scoring['home_score'])}-{int(lowest_scoring['away_score'])} | Week {int(lowest_scoring['week'])}")
-    
+
     with col3:
         st.markdown("#### ⚡ Biggest Blowout")
         st.metric(
-            label=f"{biggest_blowout['home_team']} vs {biggest_blowout['away_team']}",
-            value=f"{int(biggest_blowout['point_diff'])} pt margin"
+            label="Point Margin",
+            value=f"{int(biggest_blowout['point_diff'])} pts"
         )
+        st.caption(f"{biggest_blowout['home_team']} vs {biggest_blowout['away_team']}")
         st.caption(f"{int(biggest_blowout['home_score'])}-{int(biggest_blowout['away_score'])} | Week {int(biggest_blowout['week'])}")
-    
+
     with col4:
         st.markdown("#### 🎯 Nail-Biter")
         st.metric(
-            label=f"{closest_game['home_team']} vs {closest_game['away_team']}",
-            value=f"{int(closest_game['point_diff'])} pt margin"
+            label="Point Margin",
+            value=f"{int(closest_game['point_diff'])} pts"
         )
+        st.caption(f"{closest_game['home_team']} vs {closest_game['away_team']}")
         st.caption(f"{int(closest_game['home_score'])}-{int(closest_game['away_score'])} | Week {int(closest_game['week'])}")
     
     st.markdown("---")

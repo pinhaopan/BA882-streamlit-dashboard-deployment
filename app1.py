@@ -983,26 +983,41 @@ if page == "1. Overview":
         - Look for **clusters of color** to identify team archetypes
         - Compare teams at **similar win%** to find hidden differences
         """)
-        
-    st.info("💡 **How to read:** Values > 1.0 (green) indicate above-median performance. Values < 1.0 (red) indicate below-median performance.")
+
+    st.info("💡 **Quick Guide:** Values > 1.0 (green) indicate above-median performance. Values < 1.0 (red) indicate below-median performance.")
 
 # ============================================================================
 # 2. Team Performance
 # ============================================================================
 elif page == "2. Team Performance":
     st.subheader("🎯 Team Performance vs League Benchmark")
+    
+    st.markdown("""
+    Analyze individual team performance across multiple dimensions, compare against league benchmarks,
+    and track performance trends throughout the season.
+    """)
 
     with st.spinner("Loading team stats & benchmark..."):
         df_stats, benchmark = load_team_stats_with_benchmark()
         df_pct = compute_percentiles(df_stats, TEAM_METRICS)
 
+    # ========================================================================
+    # Team Selection
+    # ========================================================================
+    st.markdown("### 🔍 Select a Team to Analyze")
+    
     team_options = df_stats["team_name"].sort_values().unique().tolist()
-    selected_team = st.selectbox("Select a team", team_options)
+    selected_team = st.selectbox("Choose a team", team_options, key="team_perf_select")
 
     team_row = df_pct[df_pct["team_name"] == selected_team].iloc[0]
+    team_id = team_row['team_id']
+    
+    st.markdown("---")
 
-    # 2-1) KPI Cards
-    st.markdown("### 📌 Key KPIs vs League Median")
+    # ========================================================================
+    # 2-1) Enhanced KPI Cards with Rankings
+    # ========================================================================
+    st.markdown("### 📌 Key Performance Indicators")
 
     kpi_cols = ["win_pct", "avg_points_scored", "avg_points_allowed", "point_differential"]
     kpi_display = [metric_label(c) for c in kpi_cols]
@@ -1012,16 +1027,232 @@ elif page == "2. Team Performance":
         val = float(team_row[c])
         med = float(benchmark[c])
         delta_pct = (val - med) / med if med != 0 else 0.0
+        
+        # Calculate rank for this metric
+        if HIGHER_IS_BETTER.get(c, True):
+            rank = (df_stats[c] > val).sum() + 1
+        else:
+            rank = (df_stats[c] < val).sum() + 1
+        
         col_container.metric(
-            label=label,
+            label=f"{label}",
             value=f"{val:.3f}" if c == "win_pct" else f"{val:.1f}",
-            delta=f"{delta_pct:+.1%}",
+            delta=f"{delta_pct:+.1%} vs median",
+            help=f"Rank: #{rank} out of {len(df_stats)} teams"
         )
+        col_container.caption(f"📊 Rank: #{rank}/{len(df_stats)}")
 
     st.markdown("---")
 
-    # 2-2) Radar Chart
-    st.markdown("### 🕸 Radar – Multi-dimensional Comparison vs Benchmark")
+    # ========================================================================
+    # 2-2) Game Log
+    # ========================================================================
+    st.markdown("### 📋 Season Game Log")
+    
+    @st.cache_data(show_spinner="Loading game log...")
+    def load_team_game_log(team_id, season):
+        """Load all games for a specific team with opponent info"""
+        sql = """
+            WITH team_games AS (
+                SELECT 
+                    pc.game_id,
+                    g.week,
+                    g.start_date,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN 'home'
+                        ELSE 'away'
+                    END AS home_away,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.home_score
+                        ELSE pc.away_score
+                    END AS team_score,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.away_score
+                        ELSE pc.home_score
+                    END AS opponent_score,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.away_team_id
+                        ELSE pc.home_team_id
+                    END AS opponent_id,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.home_total_yards
+                        ELSE pc.away_total_yards
+                    END AS team_yards,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.home_turnovers
+                        ELSE pc.away_turnovers
+                    END AS team_turnovers
+                FROM bt.pairwise_comparisons AS pc
+                JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+                WHERE (pc.home_team_id = ? OR pc.away_team_id = ?)
+                    AND g.season = ?
+            )
+            SELECT 
+                tg.*,
+                t.display_name AS opponent
+            FROM team_games tg
+            JOIN real_deal.dim_teams AS t ON tg.opponent_id = t.id
+            ORDER BY tg.start_date
+        """
+        df = run_query(sql, (team_id, team_id, team_id, team_id, team_id, team_id, team_id, team_id, season))
+        df['result'] = df.apply(lambda row: 'W' if row['team_score'] > row['opponent_score'] else 'L', axis=1)
+        df['location'] = df['home_away'].apply(lambda x: '🏠 Home' if x == 'home' else '✈️ Away')
+        df['margin'] = df['team_score'] - df['opponent_score']
+        return df
+
+    df_games = load_team_game_log(team_id, SEASON)
+    
+    if len(df_games) > 0:
+        # Game log summary
+        col1, col2, col3, col4 = st.columns(4)
+        
+        wins = (df_games['result'] == 'W').sum()
+        losses = (df_games['result'] == 'L').sum()
+        home_games = df_games[df_games['home_away'] == 'home']
+        away_games = df_games[df_games['home_away'] == 'away']
+        home_wins = (home_games['result'] == 'W').sum() if len(home_games) > 0 else 0
+        away_wins = (away_games['result'] == 'W').sum() if len(away_games) > 0 else 0
+        
+        col1.metric("Overall Record", f"{wins}-{losses}")
+        col2.metric("Home Record", f"{home_wins}-{len(home_games) - home_wins}" if len(home_games) > 0 else "0-0")
+        col3.metric("Away Record", f"{away_wins}-{len(away_games) - away_wins}" if len(away_games) > 0 else "0-0")
+        col4.metric("Avg Margin", f"{df_games['margin'].mean():+.1f}")
+        
+        # Display game log table
+        st.dataframe(
+            df_games[[
+                'week', 'start_date', 'result', 'location', 
+                'opponent', 'team_score', 'opponent_score', 'margin', 'team_yards', 'team_turnovers'
+            ]].rename(columns={
+                'week': 'Week',
+                'start_date': 'Date',
+                'result': 'W/L',
+                'location': 'Location',
+                'opponent': 'Opponent',
+                'team_score': 'Pts',
+                'opponent_score': 'Opp Pts',
+                'margin': 'Margin',
+                'team_yards': 'Yards',
+                'team_turnovers': 'TO'
+            }),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Date": st.column_config.DateColumn(format="MMM DD, YYYY"),
+                "Margin": st.column_config.NumberColumn(format="%+d"),
+            }
+        )
+    else:
+        st.info("No game data available for this team.")
+
+    st.markdown("---")
+
+    # ========================================================================
+    # 2-3) Performance Trends
+    # ========================================================================
+    st.markdown("### 📈 Season Performance Trends")
+    
+    if len(df_games) > 0:
+        # Calculate cumulative and rolling statistics
+        df_trends = df_games.sort_values('start_date').copy()
+        df_trends['cumulative_wins'] = (df_trends['result'] == 'W').cumsum()
+        df_trends['cumulative_games'] = range(1, len(df_trends) + 1)
+        df_trends['win_pct_running'] = df_trends['cumulative_wins'] / df_trends['cumulative_games']
+        
+        # 5-game rolling averages
+        df_trends['points_ma5'] = df_trends['team_score'].rolling(window=5, min_periods=1).mean()
+        df_trends['points_allowed_ma5'] = df_trends['opponent_score'].rolling(window=5, min_periods=1).mean()
+        df_trends['margin_ma5'] = df_trends['margin'].rolling(window=5, min_periods=1).mean()
+        
+        tab1, tab2, tab3 = st.tabs(["🏆 Win % Trend", "📊 Scoring Trends", "⚖️ Margin Trend"])
+        
+        with tab1:
+            fig_winpct = px.line(
+                df_trends,
+                x='week',
+                y='win_pct_running',
+                title=f"{selected_team} - Cumulative Win % Over Season",
+                labels={'week': 'Week', 'win_pct_running': 'Win %'},
+                markers=True
+            )
+            fig_winpct.add_hline(
+                y=0.5,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="50%"
+            )
+            fig_winpct.update_yaxes(range=[0, 1], tickformat='.0%')
+            fig_winpct.update_layout(height=400, hovermode='x unified')
+            st.plotly_chart(fig_winpct, use_container_width=True)
+            
+            # Insight
+            if len(df_trends) >= 6:
+                early_winpct = df_trends.iloc[:len(df_trends)//2]['win_pct_running'].iloc[-1]
+                current_winpct = df_trends['win_pct_running'].iloc[-1]
+                if abs(current_winpct - early_winpct) > 0.1:
+                    trend = "improved" if current_winpct > early_winpct else "declined"
+                    st.info(f"📊 **Trend:** Win % has {trend} from {early_winpct:.1%} (mid-season) to {current_winpct:.1%} (current)")
+        
+        with tab2:
+            fig_scoring = go.Figure()
+            fig_scoring.add_trace(go.Scatter(
+                x=df_trends['week'],
+                y=df_trends['points_ma5'],
+                name='Points Scored (5-game avg)',
+                mode='lines+markers',
+                line=dict(color='green', width=2),
+                marker=dict(size=6)
+            ))
+            fig_scoring.add_trace(go.Scatter(
+                x=df_trends['week'],
+                y=df_trends['points_allowed_ma5'],
+                name='Points Allowed (5-game avg)',
+                mode='lines+markers',
+                line=dict(color='red', width=2),
+                marker=dict(size=6)
+            ))
+            fig_scoring.update_layout(
+                title=f"{selected_team} - Scoring Trends (5-game Moving Average)",
+                xaxis_title="Week",
+                yaxis_title="Points",
+                height=400,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_scoring, use_container_width=True)
+            
+            # Recent form
+            if len(df_trends) >= 5:
+                recent_5 = df_trends.tail(5)
+                recent_ppg = recent_5['team_score'].mean()
+                recent_papg = recent_5['opponent_score'].mean()
+                st.info(f"📊 **Last 5 games:** Scoring {recent_ppg:.1f} PPG, Allowing {recent_papg:.1f} PPG")
+        
+        with tab3:
+            fig_margin = px.line(
+                df_trends,
+                x='week',
+                y='margin_ma5',
+                title=f"{selected_team} - Point Margin Trend (5-game Moving Average)",
+                labels={'week': 'Week', 'margin_ma5': 'Point Margin'},
+                markers=True
+            )
+            fig_margin.add_hline(
+                y=0,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Even"
+            )
+            fig_margin.update_layout(height=400, hovermode='x unified')
+            st.plotly_chart(fig_margin, use_container_width=True)
+    else:
+        st.info("Not enough game data to show trends.")
+
+    st.markdown("---")
+
+    # ========================================================================
+    # 2-4) Radar Chart
+    # ========================================================================
+    st.markdown("### 🕸 Multi-dimensional Performance Radar")
 
     radar_metrics = [
         "win_pct",
@@ -1041,6 +1272,7 @@ elif page == "2. Team Performance":
             theta=labels,
             fill="toself",
             name=selected_team,
+            line=dict(color='blue', width=2)
         )
     )
     radar_fig.add_trace(
@@ -1049,25 +1281,35 @@ elif page == "2. Team Performance":
             theta=labels,
             fill="toself",
             name="League Median",
+            line=dict(color='gray', width=2),
+            opacity=0.5
         )
     )
     radar_fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0.5, max(max(radar_data["team"]), 1.5)])),
         showlegend=True,
+        height=500
     )
     st.plotly_chart(radar_fig, use_container_width=True)
+    
+    st.caption("💡 **How to read:** Values further from center indicate better performance. The gray area shows league median (1.0).")
 
     st.markdown("---")
 
-    # 2-3) Bar chart – detailed comparison
-    st.markdown("### 📊 Detailed Metric Comparison (Team vs Median)")
+    # ========================================================================
+    # 2-5) Bar chart – detailed comparison
+    # ========================================================================
+    st.markdown("### 📊 Detailed Metric Comparison")
 
     metric_multi = st.multiselect(
-        "Select metrics to compare:",
+        "Select metrics to compare (max 6 recommended):",
         TEAM_METRICS,
         default=["avg_points_scored", "avg_points_allowed", "win_pct", "point_differential"],
         format_func=metric_label,
     )
+    
+    if len(metric_multi) > 8:
+        st.warning("⚠️ Too many metrics selected. Chart may be crowded. Consider selecting fewer metrics.")
 
     long_rows = []
     for m in metric_multi:
@@ -1082,29 +1324,155 @@ elif page == "2. Team Performance":
         color="who",
         barmode="group",
         title="Team vs League Median",
+        text="value"
     )
+    bar_fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    bar_fig.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
     st.plotly_chart(bar_fig, use_container_width=True)
 
     st.markdown("---")
 
-    # 2-4) Percentile table
-    st.markdown("### 🪜 Percentile Ranking by Metric")
+    # ========================================================================
+    # 2-6) Enhanced Percentile Table with Rankings
+    # ========================================================================
+    st.markdown("### 🪜 Complete Metric Rankings")
 
+    # Calculate rankings for all metrics
     table_rows = []
     for m in TEAM_METRICS:
-        table_rows.append(
-            {
-                "Metric": metric_label(m),
-                "Value": float(team_row[m]),
-                "Percentile (0-100, higher = better)": float(team_row[m + "_pctile"]),
-            }
-        )
+        val = float(team_row[m])
+        pct = float(team_row[m + "_pctile"])
+        
+        # Calculate rank
+        if HIGHER_IS_BETTER.get(m, True):
+            rank = (df_stats[m] > val).sum() + 1
+        else:
+            rank = (df_stats[m] < val).sum() + 1
+        
+        # Determine grade
+        if pct >= 75:
+            grade = "🟢 Excellent"
+        elif pct >= 50:
+            grade = "🟡 Above Avg"
+        elif pct >= 25:
+            grade = "🟠 Below Avg"
+        else:
+            grade = "🔴 Poor"
+        
+        table_rows.append({
+            "Metric": metric_label(m),
+            "Value": val,
+            "Rank": f"#{rank}",
+            "Percentile": f"{pct:.1f}",
+            "Grade": grade,
+        })
+    
     pct_df = pd.DataFrame(table_rows)
-    st.dataframe(pct_df, use_container_width=True, hide_index=True)
+    
+    # Display by category
+    st.markdown("#### ⚔️ Offensive Metrics")
+    offensive = ["Avg Points Scored", "Avg Total Yards", "Yards per Pass", "Yards per Rush", "Points per Yard (Offense)"]
+    st.dataframe(
+        pct_df[pct_df['Metric'].isin(offensive)], 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Value": st.column_config.NumberColumn(format="%.2f"),
+            "Percentile": st.column_config.NumberColumn(format="%.1f"),
+        }
+    )
+    
+    st.markdown("#### 🛡️ Defensive Metrics")
+    defensive = ["Avg Points Allowed", "Avg Yards Allowed", "Opp 3rd Down Eff", "Opp 4th Down Eff", "Points per Yard (Defense)"]
+    st.dataframe(
+        pct_df[pct_df['Metric'].isin(defensive)], 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Value": st.column_config.NumberColumn(format="%.2f"),
+            "Percentile": st.column_config.NumberColumn(format="%.1f"),
+        }
+    )
+    
+    st.markdown("#### 🏆 Overall Performance")
+    overall = ["Win %", "Point Differential", "Turnover Margin"]
+    st.dataframe(
+        pct_df[pct_df['Metric'].isin(overall)], 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Value": st.column_config.NumberColumn(format="%.2f"),
+            "Percentile": st.column_config.NumberColumn(format="%.1f"),
+        }
+    )
 
     st.markdown("---")
 
-    # 2-5) Performance Gauges
+    # ========================================================================
+    # 2-7) Strength of Schedule
+    # ========================================================================
+    st.markdown("### 💪 Strength of Schedule")
+    
+    @st.cache_data(show_spinner="Calculating strength of schedule...")
+    def calculate_sos(team_id, season):
+        """Calculate strength of schedule based on opponents' Bradley-Terry ratings"""
+        sql = """
+            WITH team_opponents AS (
+                SELECT 
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.away_team_id
+                        ELSE pc.home_team_id
+                    END AS opponent_id,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN 'away'
+                        ELSE 'home'
+                    END AS opponent_location
+                FROM bt.pairwise_comparisons AS pc
+                JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+                WHERE (pc.home_team_id = ? OR pc.away_team_id = ?)
+                    AND g.season = ?
+            )
+            SELECT 
+                AVG(r.strength) AS avg_opponent_strength,
+                AVG(CASE WHEN to.opponent_location = 'home' THEN r.strength END) AS avg_home_opp_strength,
+                AVG(CASE WHEN to.opponent_location = 'away' THEN r.strength END) AS avg_away_opp_strength,
+                COUNT(*) AS total_opponents
+            FROM team_opponents to
+            JOIN bt.rankings AS r ON r.team_id = to.opponent_id
+        """
+        result = run_query(sql, (team_id, team_id, team_id, team_id, season))
+        if len(result) > 0:
+            return result.iloc[0]
+        return None
+    
+    sos = calculate_sos(team_id, SEASON)
+    
+    if sos is not None and sos['total_opponents'] > 0:
+        col1, col2, col3 = st.columns(3)
+        
+        col1.metric(
+            "Overall SoS",
+            f"{sos['avg_opponent_strength']:.3f}" if pd.notna(sos['avg_opponent_strength']) else "N/A",
+            help="Average Bradley-Terry strength of all opponents"
+        )
+        col2.metric(
+            "Home Opponents",
+            f"{sos['avg_home_opp_strength']:.3f}" if pd.notna(sos['avg_home_opp_strength']) else "N/A",
+            help="Average strength of opponents faced at home"
+        )
+        col3.metric(
+            "Away Opponents",
+            f"{sos['avg_away_opp_strength']:.3f}" if pd.notna(sos['avg_away_opp_strength']) else "N/A",
+            help="Average strength of opponents faced on the road"
+        )
+        
+        st.info("💡 **Interpretation:** Higher values indicate tougher opponents. League average strength is around 1.000. A SoS > 1.0 means above-average schedule difficulty.")
+    else:
+        st.info("Strength of schedule data not available (requires Bradley-Terry rankings).")
+
+    st.markdown("---")
+
+    # 2-8) Performance Gauges
     st.markdown("### 🧭 Performance Gauges")
 
     off_pct = float(team_row["points_per_yard_offense_pctile"])

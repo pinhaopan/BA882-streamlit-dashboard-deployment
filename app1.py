@@ -508,6 +508,43 @@ if page == "1. Overview":
         interesting_stats = calculate_interesting_stats()
         df_stats, benchmark = load_team_stats_with_benchmark()
     
+    # Check if we have sufficient data
+    if df_highlights.empty or df_weekly.empty or df_game_dist.empty:
+        st.warning("""
+        ⚠️ **Limited Data Available**
+        
+        Some features in this Overview section require data from `bt.pairwise_comparisons` table, 
+        which appears to be empty or unavailable. 
+        
+        Please ensure the following tables exist and contain data:
+        - `bt.pairwise_comparisons` (game-level scores and statistics)
+        - `real_deal.dim_games` (game metadata)
+        - `bt.team_stats` (team-level statistics)
+        
+        Currently showing limited overview with available data.
+        """)
+        
+        # Show basic stats only
+        st.markdown("### 📈 Basic Season Information")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Teams", overview_stats['total_teams'])
+        col2.metric("Weeks", f"{overview_stats['first_week']}-{overview_stats['latest_week']}")
+        col3.metric("Season Dates", f"{overview_stats['season_start'].strftime('%b %d')} - {overview_stats['latest_game'].strftime('%b %d')}")
+        
+        st.info("💡 The remaining sections (Team Performance, Rankings, etc.) should still work with available data.")
+        st.stop()
+    
+    # Additional data cleaning for highlights
+    # Force convert to numeric and drop any rows with NaN
+    df_highlights['total_points'] = pd.to_numeric(df_highlights['total_points'], errors='coerce')
+    df_highlights['point_diff'] = pd.to_numeric(df_highlights['point_diff'], errors='coerce')
+    df_highlights = df_highlights.dropna(subset=['total_points', 'point_diff'])
+    
+    # Check again after cleaning
+    if len(df_highlights) == 0:
+        st.error("No valid game data available after data cleaning. Please check the data quality in bt.pairwise_comparisons.")
+        st.stop()
+    
     # Data freshness indicator
     st.caption(f"📊 Data as of: {overview_stats['data_updated_at'].strftime('%B %d, %Y')}")
     st.caption(f"📅 Season: {overview_stats['season_start'].strftime('%b %d')} → {overview_stats['latest_game'].strftime('%b %d, %Y')} | Weeks {overview_stats['first_week']}-{overview_stats['latest_week']}")
@@ -533,11 +570,22 @@ if page == "1. Overview":
     # ========================================================================
     st.markdown("### 🔥 Season Highlights")
     
-    # Find notable games
-    highest_scoring = df_highlights.nlargest(1, 'total_points').iloc[0]
-    lowest_scoring = df_highlights.nsmallest(1, 'total_points').iloc[0]
-    biggest_blowout = df_highlights.nlargest(1, 'point_diff').iloc[0]
-    closest_game = df_highlights.nsmallest(1, 'point_diff').iloc[0]
+    # Debug info (optional - remove in production)
+    # st.write("Debug - df_highlights dtypes:", df_highlights.dtypes)
+    # st.write("Debug - total_points sample:", df_highlights['total_points'].head())
+    
+    # Find notable games with error handling
+    try:
+        highest_scoring = df_highlights.nlargest(1, 'total_points').iloc[0]
+        lowest_scoring = df_highlights.nsmallest(1, 'total_points').iloc[0]
+        biggest_blowout = df_highlights.nlargest(1, 'point_diff').iloc[0]
+        closest_game = df_highlights.nsmallest(1, 'point_diff').iloc[0]
+    except Exception as e:
+        st.error(f"Error finding highlight games: {e}")
+        st.write("DataFrame info:")
+        st.write(df_highlights.head())
+        st.write(df_highlights.dtypes)
+        st.stop()
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -783,6 +831,13 @@ if page == "1. Overview":
     # ========================================================================
     st.markdown("### 📊 Game Statistics Distribution")
     st.caption("💡 View the distribution of key game-level metrics across all games this season")
+    
+    # Clean game distribution data
+    for col in ['total_points', 'point_margin', 'home_score', 'away_score', 'home_total_yards', 'away_total_yards']:
+        if col in df_game_dist.columns:
+            df_game_dist[col] = pd.to_numeric(df_game_dist[col], errors='coerce')
+    
+    df_game_dist = df_game_dist.dropna(subset=['total_points', 'point_margin'])
     
     game_metrics = {
         'total_points': 'Total Points per Game',

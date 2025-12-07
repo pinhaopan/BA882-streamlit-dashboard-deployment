@@ -1439,11 +1439,11 @@ elif page == "2. Team Performance":
             )
             SELECT 
                 AVG(r.strength) AS avg_opponent_strength,
-                AVG(CASE WHEN to.opponent_location = 'home' THEN r.strength END) AS avg_home_opp_strength,
-                AVG(CASE WHEN to.opponent_location = 'away' THEN r.strength END) AS avg_away_opp_strength,
+                AVG(CASE WHEN opp.opponent_location = 'home' THEN r.strength END) AS avg_home_opp_strength,
+                AVG(CASE WHEN opp.opponent_location = 'away' THEN r.strength END) AS avg_away_opp_strength,
                 COUNT(*) AS total_opponents
-            FROM team_opponents to
-            JOIN bt.rankings AS r ON r.team_id = to.opponent_id
+            FROM team_opponents opp
+            JOIN bt.rankings AS r ON r.team_id = opp.opponent_id
         """
         result = run_query(sql, (team_id, team_id, team_id, team_id, season))
         if len(result) > 0:

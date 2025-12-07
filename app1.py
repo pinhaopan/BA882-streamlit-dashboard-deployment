@@ -1014,38 +1014,8 @@ elif page == "2. Team Performance":
     
     st.markdown("---")
 
-    # ========================================================================
-    # 2-1) Enhanced KPI Cards with Rankings
-    # ========================================================================
-    st.markdown("### 📌 Key Performance Indicators")
-
-    kpi_cols = ["win_pct", "avg_points_scored", "avg_points_allowed", "point_differential"]
-    kpi_display = [metric_label(c) for c in kpi_cols]
-
-    cols = st.columns(len(kpi_cols))
-    for c, label, col_container in zip(kpi_cols, kpi_display, cols):
-        val = float(team_row[c])
-        med = float(benchmark[c])
-        delta_pct = (val - med) / med if med != 0 else 0.0
-        
-        # Calculate rank for this metric
-        if HIGHER_IS_BETTER.get(c, True):
-            rank = (df_stats[c] > val).sum() + 1
-        else:
-            rank = (df_stats[c] < val).sum() + 1
-        
-        col_container.metric(
-            label=f"{label}",
-            value=f"{val:.3f}" if c == "win_pct" else f"{val:.1f}",
-            delta=f"{delta_pct:+.1%} vs median",
-            help=f"Rank: #{rank} out of {len(df_stats)} teams"
-        )
-        col_container.caption(f"📊 Rank: #{rank}/{len(df_stats)}")
-
-    st.markdown("---")
-
-    # ========================================================================
-    # 2-2) Game Log
+     # ========================================================================
+    # 2-1) Game Log
     # ========================================================================
     st.markdown("### 📋 Season Game Log")
     
@@ -1106,7 +1076,7 @@ elif page == "2. Team Performance":
     
     if len(df_games) > 0:
         # Game log summary
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns(3)
         
         wins = (df_games['result'] == 'W').sum()
         losses = (df_games['result'] == 'L').sum()
@@ -1118,7 +1088,6 @@ elif page == "2. Team Performance":
         col1.metric("Overall Record", f"{wins}-{losses}")
         col2.metric("Home Record", f"{home_wins}-{len(home_games) - home_wins}" if len(home_games) > 0 else "0-0")
         col3.metric("Away Record", f"{away_wins}-{len(away_games) - away_wins}" if len(away_games) > 0 else "0-0")
-        col4.metric("Avg Margin", f"{df_games['margin'].mean():+.1f}")
         
         # Display game log table
         st.dataframe(
@@ -1135,7 +1104,7 @@ elif page == "2. Team Performance":
                 'opponent_score': 'Opp Pts',
                 'margin': 'Margin',
                 'team_yards': 'Yards',
-                'team_turnovers': 'TO'
+                'team_turnovers': 'Turnovers',
             }),
             use_container_width=True,
             hide_index=True,
@@ -1146,6 +1115,36 @@ elif page == "2. Team Performance":
         )
     else:
         st.info("No game data available for this team.")
+
+    st.markdown("---")
+
+    # ========================================================================
+    # 2-2) Enhanced KPI Cards with Rankings
+    # ========================================================================
+    st.markdown("### 📌 Key Performance Indicators")
+
+    kpi_cols = ["win_pct", "avg_points_scored", "avg_points_allowed", "point_differential"]
+    kpi_display = [metric_label(c) for c in kpi_cols]
+
+    cols = st.columns(len(kpi_cols))
+    for c, label, col_container in zip(kpi_cols, kpi_display, cols):
+        val = float(team_row[c])
+        med = float(benchmark[c])
+        delta_pct = (val - med) / med if med != 0 else 0.0
+        
+        # Calculate rank for this metric
+        if HIGHER_IS_BETTER.get(c, True):
+            rank = (df_stats[c] > val).sum() + 1
+        else:
+            rank = (df_stats[c] < val).sum() + 1
+        
+        col_container.metric(
+            label=f"{label}",
+            value=f"{val:.3f}" if c == "win_pct" else f"{val:.1f}",
+            delta=f"{delta_pct:+.1%} vs median",
+            help=f"Rank: #{rank} out of {len(df_stats)} teams"
+        )
+        col_container.caption(f"📊 Rank: #{rank}/{len(df_stats)}")
 
     st.markdown("---")
 
@@ -1251,52 +1250,109 @@ elif page == "2. Team Performance":
 
     st.markdown("---")
 
-    # ========================================================================
-    # 2-4) Radar Chart
-    # ========================================================================
-    st.markdown("### 🕸 Multi-dimensional Performance Radar")
+# ========================================================================
+# 2-4) Radar Chart with Standardized Metrics (0-1 scale)
+# ========================================================================
+st.markdown("### 🕸 Multi-dimensional Performance Radar")
 
-    radar_metrics = [
-        "win_pct",
-        "avg_points_scored",
-        "avg_points_allowed",
-        "avg_total_yards",
-        "avg_yards_allowed",
-        "turnover_margin",
-    ]
-    labels = [metric_label(c) for c in radar_metrics]
-    radar_data = normalize_for_radar(team_row, benchmark, radar_metrics)
+radar_metrics = [
+    "win_pct",
+    "avg_points_scored",
+    "avg_points_allowed",
+    "avg_total_yards",
+    "avg_yards_allowed",
+    "turnover_margin",
+]
 
-    radar_fig = go.Figure()
-    radar_fig.add_trace(
-        go.Scatterpolar(
-            r=radar_data["team"],
-            theta=labels,
-            fill="toself",
-            name=selected_team,
-            line=dict(color='blue', width=2)
-        )
-    )
-    radar_fig.add_trace(
-        go.Scatterpolar(
-            r=radar_data["bench"],
-            theta=labels,
-            fill="toself",
-            name="League Median",
-            line=dict(color='gray', width=2),
-            opacity=0.5
-        )
-    )
-    radar_fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0.5, max(max(radar_data["team"]), 1.5)])),
-        showlegend=True,
-        height=500
-    )
-    st.plotly_chart(radar_fig, use_container_width=True)
+@st.cache_data
+def calculate_standardized_radar_data(df_stats, selected_team, metrics):
+    """
+    Standardize all metrics to 0-1 scale, then calculate median and team values.
+    For metrics where lower is better, invert the scale.
+    """
+    standardized_data = {}
     
-    st.caption("💡 **How to read:** Values further from center indicate better performance. The gray area shows league median (1.0).")
+    for metric in metrics:
+        values = df_stats[metric].copy()
+        
+        # Get min and max
+        min_val = values.min()
+        max_val = values.max()
+        
+        # Standardize to 0-1
+        if max_val != min_val:
+            standardized = (values - min_val) / (max_val - min_val)
+        else:
+            standardized = pd.Series([0.5] * len(values), index=values.index)
+        
+        # If lower is better, invert the scale
+        if not HIGHER_IS_BETTER.get(metric, True):
+            standardized = 1 - standardized
+        
+        standardized_data[metric] = standardized
+    
+    # Create DataFrame with standardized values
+    std_df = pd.DataFrame(standardized_data)
+    std_df['team_name'] = df_stats['team_name'].values
+    
+    # Calculate median for each metric
+    median_values = std_df[metrics].median()
+    
+    # Get team values
+    team_values = std_df[std_df['team_name'] == selected_team][metrics].iloc[0]
+    
+    return team_values.tolist(), median_values.tolist()
 
-    st.markdown("---")
+team_radar_values, median_radar_values = calculate_standardized_radar_data(
+    df_stats, selected_team, radar_metrics
+)
+
+labels = [metric_label(c) for c in radar_metrics]
+
+radar_fig = go.Figure()
+
+# Add team trace
+radar_fig.add_trace(
+    go.Scatterpolar(
+        r=team_radar_values,
+        theta=labels,
+        fill="toself",
+        name=selected_team,
+        line=dict(color='blue', width=2),
+        fillcolor='rgba(0, 0, 255, 0.2)'
+    )
+)
+
+# Add median trace
+radar_fig.add_trace(
+    go.Scatterpolar(
+        r=median_radar_values,
+        theta=labels,
+        fill="toself",
+        name="League Median",
+        line=dict(color='gray', width=2, dash='dash'),
+        fillcolor='rgba(128, 128, 128, 0.1)'
+    )
+)
+
+radar_fig.update_layout(
+    polar=dict(
+        radialaxis=dict(
+            visible=True,
+            range=[0, 1], 
+            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+            ticktext=['0', '0.25', '0.5', '0.75', '1.0']
+        )
+    ),
+    showlegend=True,
+    height=500
+)
+
+st.plotly_chart(radar_fig, use_container_width=True)
+
+st.caption("💡 **How to read:** All metrics are standardized to 0-1 scale (0 = worst in league, 1 = best in league). For defensive metrics (points/yards allowed), the scale is inverted so that higher values are better. The dashed gray line shows the league median (typically around 0.5).")
+
+st.markdown("---")
 
     # ========================================================================
     # 2-5) Bar chart – detailed comparison

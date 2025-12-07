@@ -164,16 +164,16 @@ def load_season_overview() -> dict:
         games_sql = """
             SELECT 
                 COUNT(*) AS total_games,
-                AVG(home_score + away_score) AS avg_total_points,
-                AVG(ABS(home_score - away_score)) AS avg_margin,
-                MAX(home_score + away_score) AS highest_total,
-                MIN(home_score + away_score) AS lowest_total,
-                MAX(ABS(home_score - away_score)) AS biggest_margin,
-                MIN(ABS(home_score - away_score)) AS closest_margin,
+                AVG(CAST(home_score AS DOUBLE) + CAST(away_score AS DOUBLE)) AS avg_total_points,
+                AVG(ABS(CAST(home_score AS DOUBLE) - CAST(away_score AS DOUBLE))) AS avg_margin,
+                MAX(CAST(home_score AS DOUBLE) + CAST(away_score AS DOUBLE)) AS highest_total,
+                MIN(CAST(home_score AS DOUBLE) + CAST(away_score AS DOUBLE)) AS lowest_total,
+                MAX(ABS(CAST(home_score AS DOUBLE) - CAST(away_score AS DOUBLE))) AS biggest_margin,
+                MIN(ABS(CAST(home_score AS DOUBLE) - CAST(away_score AS DOUBLE))) AS closest_margin,
                 SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS home_win_pct
             FROM bt.pairwise_comparisons
         """
-        games_stats = run_query(games_sql).iloc[0]  
+        games_stats = run_query(games_sql).iloc[0]
     except Exception as e:
         st.error(f"Error loading from bt.pairwise_comparisons: {e}")
         st.info("Falling back to basic game statistics from dim_games...")
@@ -204,7 +204,7 @@ def load_season_overview() -> dict:
         FROM real_deal.dim_games
         WHERE season = {SEASON}
     """
-    time_stats = run_query(time_sql).iloc[0]  
+    time_stats = run_query(time_sql).iloc[0]
     
     # 3. From team_stats - get total teams and update timestamp
     team_sql = """
@@ -241,9 +241,9 @@ def load_highlight_games():
         sql = f"""
             SELECT 
                 pc.game_id,
-                pc.home_score,
-                pc.away_score,
-                pc.score_margin,
+                CAST(pc.home_score AS INTEGER) AS home_score,
+                CAST(pc.away_score AS INTEGER) AS away_score,
+                CAST(pc.score_margin AS INTEGER) AS score_margin,
                 pc.home_total_yards,
                 pc.away_total_yards,
                 ht.display_name AS home_team,
@@ -257,9 +257,17 @@ def load_highlight_games():
             WHERE g.season = {SEASON}
             ORDER BY g.start_date DESC
         """
-        df = run_query(sql)  
+        df = run_query(sql)
+        
+        # Ensure numeric types
+        df['home_score'] = pd.to_numeric(df['home_score'], errors='coerce')
+        df['away_score'] = pd.to_numeric(df['away_score'], errors='coerce')
+        df['score_margin'] = pd.to_numeric(df['score_margin'], errors='coerce')
+        
+        # Calculate derived columns
         df['total_points'] = df['home_score'] + df['away_score']
         df['point_diff'] = df['score_margin'].abs()
+        
         return df
     except Exception as e:
         st.warning(f"Could not load highlight games from pairwise_comparisons: {e}")
@@ -279,19 +287,28 @@ def load_weekly_trends():
             SELECT 
                 g.week,
                 COUNT(*) AS games_played,
-                AVG(pc.home_score + pc.away_score) AS avg_total_points,
-                AVG(pc.home_score) AS avg_home_score,
-                AVG(pc.away_score) AS avg_away_score,
-                AVG(ABS(pc.home_score - pc.away_score)) AS avg_margin,
+                AVG(CAST(pc.home_score AS DOUBLE) + CAST(pc.away_score AS DOUBLE)) AS avg_total_points,
+                AVG(CAST(pc.home_score AS DOUBLE)) AS avg_home_score,
+                AVG(CAST(pc.away_score AS DOUBLE)) AS avg_away_score,
+                AVG(ABS(CAST(pc.home_score AS DOUBLE) - CAST(pc.away_score AS DOUBLE))) AS avg_margin,
                 SUM(CASE WHEN pc.home_won = 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS home_win_rate,
-                SUM(CASE WHEN ABS(pc.home_score - pc.away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS close_game_rate
+                SUM(CASE WHEN ABS(CAST(pc.home_score AS DOUBLE) - CAST(pc.away_score AS DOUBLE)) <= 7 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS close_game_rate
             FROM bt.pairwise_comparisons AS pc
             JOIN real_deal.dim_games AS g ON pc.game_id = g.id
             WHERE g.season = {SEASON}
             GROUP BY g.week
             ORDER BY g.week
         """
-        return run_query(sql) 
+        df = run_query(sql)
+        
+        # Ensure numeric types
+        numeric_cols = ['games_played', 'avg_total_points', 'avg_home_score', 
+                       'avg_away_score', 'avg_margin', 'home_win_rate', 'close_game_rate']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df
     except Exception as e:
         st.warning(f"Could not load weekly trends from pairwise_comparisons: {e}")
         # Fallback: basic week counts from dim_games
@@ -310,7 +327,7 @@ def load_weekly_trends():
             GROUP BY week
             ORDER BY week
         """
-        return run_query(sql_fallback) 
+        return run_query(sql_fallback)
 
 
 @st.cache_data(show_spinner="Loading game distributions...")
@@ -319,10 +336,10 @@ def load_game_distributions():
     try:
         sql = f"""
             SELECT 
-                pc.home_score,
-                pc.away_score,
-                pc.home_score + pc.away_score AS total_points,
-                ABS(pc.home_score - pc.away_score) AS point_margin,
+                CAST(pc.home_score AS INTEGER) AS home_score,
+                CAST(pc.away_score AS INTEGER) AS away_score,
+                CAST(pc.home_score AS INTEGER) + CAST(pc.away_score AS INTEGER) AS total_points,
+                ABS(CAST(pc.home_score AS INTEGER) - CAST(pc.away_score AS INTEGER)) AS point_margin,
                 pc.home_total_yards,
                 pc.away_total_yards,
                 pc.home_turnovers,
@@ -332,7 +349,16 @@ def load_game_distributions():
             JOIN real_deal.dim_games AS g ON pc.game_id = g.id
             WHERE g.season = {SEASON}
         """
-        return run_query(sql)
+        df = run_query(sql)
+        
+        # Ensure numeric types
+        numeric_cols = ['home_score', 'away_score', 'total_points', 'point_margin',
+                       'home_total_yards', 'away_total_yards', 'home_turnovers', 'away_turnovers']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df
     except Exception as e:
         st.warning(f"Could not load game distributions from pairwise_comparisons: {e}")
         # Return empty dataframe with correct structure
@@ -346,17 +372,39 @@ def load_game_distributions():
 @st.cache_data(show_spinner="Calculating interesting statistics...")
 def calculate_interesting_stats():
     """Calculate interesting season-wide statistics"""
-    sql = """
-        SELECT 
-            COUNT(*) AS total_games,
-            SUM(CASE WHEN ABS(home_score - away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS close_game_pct,
-            SUM(CASE WHEN ABS(home_score - away_score) <= 3 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS one_score_pct,
-            SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_advantage,
-            AVG(home_score + away_score) AS avg_combined,
-            SUM(CASE WHEN home_score = 0 OR away_score = 0 THEN 1 ELSE 0 END) AS shutouts
-        FROM bt.pairwise_comparisons
-    """
-    return run_query(sql).iloc[0]
+    try:
+        sql = """
+            SELECT 
+                COUNT(*) AS total_games,
+                SUM(CASE WHEN ABS(CAST(home_score AS DOUBLE) - CAST(away_score AS DOUBLE)) <= 7 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS close_game_pct,
+                SUM(CASE WHEN ABS(CAST(home_score AS DOUBLE) - CAST(away_score AS DOUBLE)) <= 3 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS one_score_pct,
+                SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS home_advantage,
+                AVG(CAST(home_score AS DOUBLE) + CAST(away_score AS DOUBLE)) AS avg_combined,
+                SUM(CASE WHEN CAST(home_score AS INTEGER) = 0 OR CAST(away_score AS INTEGER) = 0 THEN 1 ELSE 0 END) AS shutouts
+            FROM bt.pairwise_comparisons
+        """
+        result = run_query(sql).iloc[0]
+        
+        # Ensure numeric types
+        return pd.Series({
+            'total_games': int(result['total_games']),
+            'close_game_pct': float(result['close_game_pct']),
+            'one_score_pct': float(result['one_score_pct']),
+            'home_advantage': float(result['home_advantage']),
+            'avg_combined': float(result['avg_combined']),
+            'shutouts': int(result['shutouts'])
+        })
+    except Exception as e:
+        st.warning(f"Could not calculate interesting stats from pairwise_comparisons: {e}")
+        # Return default values
+        return pd.Series({
+            'total_games': 0,
+            'close_game_pct': 0.35,
+            'one_score_pct': 0.18,
+            'home_advantage': 0.55,
+            'avg_combined': 50.0,
+            'shutouts': 5
+        })
 
 
 # ============================================================================

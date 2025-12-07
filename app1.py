@@ -152,9 +152,9 @@ def load_games_meta() -> pd.DataFrame:
 # ============================================================================
 @st.cache_data(show_spinner="Loading comprehensive season overview...")
 def load_season_overview() -> dict:
-    """Load comprehensive season overview metrics from pairwise_comparison and dim_games"""
+    """Load comprehensive season overview metrics from pairwise_comparisons and dim_games"""
     
-    # 1. From pairwise_comparison - get game-level statistics
+    # 1. From pairwise_comparisons - get game-level statistics
     games_sql = """
         SELECT 
             COUNT(*) AS total_games,
@@ -165,7 +165,7 @@ def load_season_overview() -> dict:
             MAX(ABS(home_score - away_score)) AS biggest_margin,
             MIN(ABS(home_score - away_score)) AS closest_margin,
             SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_win_pct
-        FROM bt.pairwise_comparison
+        FROM bt.pairwise_comparisons
     """
     games_stats = run_query(games_sql).iloc[0]
     
@@ -225,7 +225,7 @@ def load_highlight_games():
             at.display_name AS away_team,
             g.start_date,
             g.week
-        FROM bt.pairwise_comparison AS pc
+        FROM bt.pairwise_comparisons AS pc
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
         JOIN real_deal.dim_teams AS ht ON pc.home_team_id = ht.id
         JOIN real_deal.dim_teams AS at ON pc.away_team_id = at.id
@@ -251,7 +251,7 @@ def load_weekly_trends():
             AVG(ABS(pc.home_score - pc.away_score)) AS avg_margin,
             SUM(CASE WHEN pc.home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_win_rate,
             SUM(CASE WHEN ABS(pc.home_score - pc.away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS close_game_rate
-        FROM bt.pairwise_comparison AS pc
+        FROM bt.pairwise_comparisons AS pc
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
         WHERE g.season = ?
         GROUP BY g.week
@@ -274,7 +274,7 @@ def load_game_distributions():
             pc.home_turnovers,
             pc.away_turnovers,
             g.week
-        FROM bt.pairwise_comparison AS pc
+        FROM bt.pairwise_comparisons AS pc
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
         WHERE g.season = ?
     """
@@ -292,7 +292,7 @@ def calculate_interesting_stats():
             SUM(CASE WHEN home_won = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS home_advantage,
             AVG(home_score + away_score) AS avg_combined,
             SUM(CASE WHEN home_score = 0 OR away_score = 0 THEN 1 ELSE 0 END) AS shutouts
-        FROM bt.pairwise_comparison
+        FROM bt.pairwise_comparisons
     """
     return run_query(sql).iloc[0]
 

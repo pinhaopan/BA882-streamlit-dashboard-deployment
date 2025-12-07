@@ -147,7 +147,7 @@ def load_games_meta() -> pd.DataFrame:
             start_date,
             venue_id
         FROM real_deal.dim_games
-        WHERE season = ?
+        WHERE season = 2025
     """
     return run_query(sql, (SEASON,))
 
@@ -183,7 +183,7 @@ def load_season_overview() -> dict:
             MAX(week) AS latest_week,
             COUNT(DISTINCT week) AS weeks_played
         FROM real_deal.dim_games
-        WHERE season = ?
+        WHERE season = 2025
     """
     time_stats = run_query(time_sql, (SEASON,)).iloc[0]
     
@@ -234,7 +234,7 @@ def load_highlight_games():
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
         JOIN real_deal.dim_teams AS ht ON pc.home_team_id = ht.id
         JOIN real_deal.dim_teams AS at ON pc.away_team_id = at.id
-        WHERE g.season = ?
+        WHERE g.season = 2025
         ORDER BY g.start_date DESC
     """
     df = run_query(sql, (SEASON,))
@@ -258,7 +258,7 @@ def load_weekly_trends():
             SUM(CASE WHEN ABS(pc.home_score - pc.away_score) <= 7 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS close_game_rate
         FROM bt.pairwise_comparisons AS pc
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
-        WHERE g.season = ?
+        WHERE g.season = 2025
         GROUP BY g.week
         ORDER BY g.week
     """
@@ -281,7 +281,7 @@ def load_game_distributions():
             g.week
         FROM bt.pairwise_comparisons AS pc
         JOIN real_deal.dim_games AS g ON pc.game_id = g.id
-        WHERE g.season = ?
+        WHERE g.season = 2025
     """
     return run_query(sql, (SEASON,))
 

@@ -1052,6 +1052,8 @@ elif page == "2. Team Performance":
     @st.cache_data(show_spinner="Loading game log...")
     def load_team_game_log(team_id, season):
         """Load all games for a specific team with opponent info"""
+        team_id = int(team_id)
+        season = int(season)
         sql = """
             WITH team_games AS (
                 SELECT 
@@ -1416,6 +1418,9 @@ elif page == "2. Team Performance":
     @st.cache_data(show_spinner="Calculating strength of schedule...")
     def calculate_sos(team_id, season):
         """Calculate strength of schedule based on opponents' Bradley-Terry ratings"""
+        team_id = int(team_id)
+        season = int(season)
+
         sql = """
             WITH team_opponents AS (
                 SELECT 

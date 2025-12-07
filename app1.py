@@ -633,6 +633,15 @@ if page == "1. Overview":
             
             if abs(change) > 2:
                 direction = "increased" if change > 0 else "decreased"
+                with st.expander("ℹ️ About this analysis", expanded=False):
+                    st.markdown(f"""
+                    **How we calculate seasonal trends:**
+                    - **Early Season**: Weeks 1-4 (Average: {early_avg:.1f} pts/game)
+                    - **Late Season**: Weeks {df_weekly['week'].max()-3}-{df_weekly['week'].max()} (Average: {late_avg:.1f} pts/game)
+                    
+                    We compare these two periods to identify how scoring patterns change throughout the season. 
+                    Factors like weather, defensive improvements, and injuries often affect late-season scoring.
+                    """)
                 st.info(f"📊 **Scoring trend:** Points have {direction} by {abs(change):.1f} from early season ({early_avg:.1f} pts) to late season ({late_avg:.1f} pts)")
     
     with tab2:
@@ -671,8 +680,7 @@ if page == "1. Overview":
         st.plotly_chart(fig_home, use_container_width=True)
         
         # Insights
-        avg_home_adv = df_weekly['home_win_rate'].mean()
-        st.info(f"🏠 **Overall home advantage:** {avg_home_adv:.1%} (vs expected 50%)")
+        st.info(f"🏠 **Overall home advantage:** {overview_stats['home_win_pct']:.1%} (vs expected 50%)")
         
         # Find weeks with strongest/weakest home advantage
         strongest_home = df_weekly.loc[df_weekly['home_win_rate'].idxmax()]

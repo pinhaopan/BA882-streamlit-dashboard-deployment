@@ -1097,7 +1097,7 @@ elif page == "2. Team Performance":
         # Show team logo
         if team_logo and not pd.isna(team_logo):
             with col_logo:
-                st.markdown(f"**{selected_team}**") 
+                st.markdown(f"{selected_team}") 
                 st.image(team_logo, width=80) 
         else:
             col_logo.markdown(f"### {selected_team[:3]}") 

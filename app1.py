@@ -1130,7 +1130,7 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-2) Enhanced KPI Cards with Rankings
+    # 2-2) Enhanced KPI Cards with Rankings + Bradley-Terry
     # ========================================================================
     st.markdown("### 📌 Key Performance Indicators")
 

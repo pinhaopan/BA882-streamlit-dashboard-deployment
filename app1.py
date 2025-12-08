@@ -1149,7 +1149,74 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-3) Performance Trends
+    # 2-3) Strength of Schedule
+    # ========================================================================
+    st.markdown("### 💪 Strength of Schedule")
+    
+    @st.cache_data(show_spinner="Calculating strength of schedule...")
+    def calculate_sos(team_id, season):
+        """Calculate strength of schedule based on opponents' Bradley-Terry ratings"""
+        team_id = int(team_id)
+        season = int(season)
+
+        sql = """
+            WITH team_opponents AS (
+                SELECT 
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN pc.away_team_id
+                        ELSE pc.home_team_id
+                    END AS opponent_id,
+                    CASE 
+                        WHEN pc.home_team_id = ? THEN 'away'
+                        ELSE 'home'
+                    END AS opponent_location
+                FROM bt.pairwise_comparisons AS pc
+                JOIN real_deal.dim_games AS g ON pc.game_id = g.id
+                WHERE (pc.home_team_id = ? OR pc.away_team_id = ?)
+                    AND g.season = ?
+            )
+            SELECT 
+                AVG(r.strength) AS avg_opponent_strength,
+                AVG(CASE WHEN opp.opponent_location = 'home' THEN r.strength END) AS avg_home_opp_strength,
+                AVG(CASE WHEN opp.opponent_location = 'away' THEN r.strength END) AS avg_away_opp_strength,
+                COUNT(*) AS total_opponents
+            FROM team_opponents opp
+            JOIN bt.rankings AS r ON r.team_id = opp.opponent_id
+        """
+        result = run_query(sql, (team_id, team_id, team_id, team_id, season))
+        if len(result) > 0:
+            return result.iloc[0]
+        return None
+    
+    sos = calculate_sos(team_id, SEASON)
+    
+    if sos is not None and sos['total_opponents'] > 0:
+        col1, col2, col3 = st.columns(3)
+        
+        col1.metric(
+            "Overall SoS",
+            f"{sos['avg_opponent_strength']:.3f}" if pd.notna(sos['avg_opponent_strength']) else "N/A",
+            help="Average Bradley-Terry strength of all opponents"
+        )
+        col2.metric(
+            "Home Opponents",
+            f"{sos['avg_home_opp_strength']:.3f}" if pd.notna(sos['avg_home_opp_strength']) else "N/A",
+            help="Average strength of opponents faced at home"
+        )
+        col3.metric(
+            "Away Opponents",
+            f"{sos['avg_away_opp_strength']:.3f}" if pd.notna(sos['avg_away_opp_strength']) else "N/A",
+            help="Average strength of opponents faced on the road"
+        )
+        
+        st.info("💡 **Interpretation:** Higher values indicate tougher opponents. League average strength is around 1.000. A SoS > 1.0 means above-average schedule difficulty.")
+    else:
+        st.info("Strength of schedule data not available (requires Bradley-Terry rankings).")
+
+    st.markdown("---")
+
+    # ========================================================================
+    # 2-4) Performance Trends
     # ========================================================================
     st.markdown("### 📈 Season Performance Trends")
     
@@ -1251,7 +1318,7 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-4) Radar Chart with Standardized Metrics (0-1 scale)
+    # 2-5) Radar Chart with Standardized Metrics (0-1 scale)
     # ========================================================================
     st.markdown("### 🕸 Multi-dimensional Performance Radar")
 
@@ -1355,7 +1422,7 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-5) Bar chart – detailed comparison
+    # 2-6) Bar chart – detailed comparison
     # ========================================================================
     st.markdown("### 📊 Detailed Metric Comparison")
 
@@ -1391,7 +1458,7 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-6) Enhanced Percentile Table with Rankings
+    # 2-7) Enhanced Percentile Table with Rankings
     # ========================================================================
     st.markdown("### 🪜 Complete Metric Rankings")
 
@@ -1467,73 +1534,8 @@ elif page == "2. Team Performance":
     st.markdown("---")
 
     # ========================================================================
-    # 2-7) Strength of Schedule
-    # ========================================================================
-    st.markdown("### 💪 Strength of Schedule")
-    
-    @st.cache_data(show_spinner="Calculating strength of schedule...")
-    def calculate_sos(team_id, season):
-        """Calculate strength of schedule based on opponents' Bradley-Terry ratings"""
-        team_id = int(team_id)
-        season = int(season)
-
-        sql = """
-            WITH team_opponents AS (
-                SELECT 
-                    CASE 
-                        WHEN pc.home_team_id = ? THEN pc.away_team_id
-                        ELSE pc.home_team_id
-                    END AS opponent_id,
-                    CASE 
-                        WHEN pc.home_team_id = ? THEN 'away'
-                        ELSE 'home'
-                    END AS opponent_location
-                FROM bt.pairwise_comparisons AS pc
-                JOIN real_deal.dim_games AS g ON pc.game_id = g.id
-                WHERE (pc.home_team_id = ? OR pc.away_team_id = ?)
-                    AND g.season = ?
-            )
-            SELECT 
-                AVG(r.strength) AS avg_opponent_strength,
-                AVG(CASE WHEN opp.opponent_location = 'home' THEN r.strength END) AS avg_home_opp_strength,
-                AVG(CASE WHEN opp.opponent_location = 'away' THEN r.strength END) AS avg_away_opp_strength,
-                COUNT(*) AS total_opponents
-            FROM team_opponents opp
-            JOIN bt.rankings AS r ON r.team_id = opp.opponent_id
-        """
-        result = run_query(sql, (team_id, team_id, team_id, team_id, season))
-        if len(result) > 0:
-            return result.iloc[0]
-        return None
-    
-    sos = calculate_sos(team_id, SEASON)
-    
-    if sos is not None and sos['total_opponents'] > 0:
-        col1, col2, col3 = st.columns(3)
-        
-        col1.metric(
-            "Overall SoS",
-            f"{sos['avg_opponent_strength']:.3f}" if pd.notna(sos['avg_opponent_strength']) else "N/A",
-            help="Average Bradley-Terry strength of all opponents"
-        )
-        col2.metric(
-            "Home Opponents",
-            f"{sos['avg_home_opp_strength']:.3f}" if pd.notna(sos['avg_home_opp_strength']) else "N/A",
-            help="Average strength of opponents faced at home"
-        )
-        col3.metric(
-            "Away Opponents",
-            f"{sos['avg_away_opp_strength']:.3f}" if pd.notna(sos['avg_away_opp_strength']) else "N/A",
-            help="Average strength of opponents faced on the road"
-        )
-        
-        st.info("💡 **Interpretation:** Higher values indicate tougher opponents. League average strength is around 1.000. A SoS > 1.0 means above-average schedule difficulty.")
-    else:
-        st.info("Strength of schedule data not available (requires Bradley-Terry rankings).")
-
-    st.markdown("---")
-
     # 2-8) Performance Gauges
+    # ========================================================================
     st.markdown("### 🧭 Performance Gauges")
 
     off_pct = float(team_row["points_per_yard_offense_pctile"])

@@ -1076,11 +1076,33 @@ elif page == "2. Team Performance":
         return df
 
     df_games = load_team_game_log(team_id, SEASON)
-
     if len(df_games) > 0:
-        # Game log summary
-        col1, col2, col3 = st.columns(3)
+        # Get team logo
+        team_logo = df_stats[df_stats['team_name'] == selected_team]['logo'].iloc[0] if 'logo' in df_stats.columns else None
         
+        if team_logo is None or pd.isna(team_logo):
+            logo_sql = """
+                SELECT logo 
+                FROM real_deal.dim_teams 
+                WHERE id = ?
+            """
+            logo_result = run_query(logo_sql, (int(team_id),))
+            if len(logo_result) > 0:
+                team_logo = logo_result.iloc[0]['logo']
+        
+        # Game log summary with team logo
+        st.markdown("#### 📊 Season Summary")
+        
+        col_logo, col1, col2, col3 = st.columns([1, 2, 2, 2]) 
+        
+        # Show team logo
+        if team_logo and not pd.isna(team_logo):
+            col_logo.image(team_logo, width=80)
+            col_logo.caption(selected_team)
+        else:
+            col_logo.markdown(f"### {selected_team[:3]}") 
+        
+        # Calculate Statistics
         wins = (df_games['result'] == 'W').sum()
         losses = (df_games['result'] == 'L').sum()
         home_games = df_games[df_games['home_away'] == 'home']

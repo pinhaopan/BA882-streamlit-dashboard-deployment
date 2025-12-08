@@ -1091,14 +1091,14 @@ elif page == "2. Team Performance":
                 team_logo = logo_result.iloc[0]['logo']
         
         # Game log summary with team logo
-        st.markdown("#### 📊 Season Summary")
         
-        col_logo, col1, col2, col3 = st.columns([1, 2, 2, 2]) 
+        col_logo, col1, col2, col3 = st.columns(4) 
         
         # Show team logo
         if team_logo and not pd.isna(team_logo):
-            col_logo.image(team_logo, width=80)
-            col_logo.caption(selected_team)
+            with col_logo:
+                st.markdown(f"**{selected_team}**") 
+                st.image(team_logo, width=80) 
         else:
             col_logo.markdown(f"### {selected_team[:3]}") 
         

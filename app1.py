@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import duckdb
 import numpy as np
@@ -7,7 +7,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import re
 from sklearn.cluster import KMeans
+import requests
 
 from google.cloud import secretmanager
 
@@ -41,12 +43,135 @@ def get_connection():
     return conn
 
 
-def run_query(sql: str, params: tuple | None = None) -> pd.DataFrame:
+def run_query(sql: str, params: Optional[tuple] = None) -> pd.DataFrame:
     """Helper: execute SQL and return a DataFrame."""
     conn = get_connection()
     if params is None:
         return conn.execute(sql).fetch_df()
     return conn.execute(sql, params).fetch_df()
+
+
+@st.cache_data(show_spinner=False)
+def get_db_schema_text() -> str:
+    """
+    Query MotherDuck/DuckDB for schema info and return a compact text description
+    for the LLM prompt. Only includes schemas bt and real_deal.
+    """
+    try:
+        df = run_query(
+            """
+            SELECT
+                table_schema,
+                table_name,
+                column_name
+            FROM information_schema.columns
+            WHERE table_schema IN ('bt', 'real_deal')
+            ORDER BY table_schema, table_name, ordinal_position
+            """
+        )
+    except Exception:
+        return ""
+
+    if df.empty:
+        return ""
+
+    lines = ["Available tables and columns:"]
+    for (schema, table), group in df.groupby(["table_schema", "table_name"]):
+        cols = ", ".join(group["column_name"].tolist())
+        lines.append(f"{schema}.{table}({cols})")
+    return "\n".join(lines)
+
+
+def is_sql_safe(sql: str) -> bool:
+    """Block obvious DDL/DML from running."""
+    forbidden = re.compile(r"\b(insert|update|delete|alter|drop|create|truncate)\b", re.IGNORECASE)
+    return not bool(forbidden.search(sql))
+
+
+def _extract_sql_from_gemini(data: dict) -> str | None:
+    """
+    Gemini generateContent response → SQL text.
+    Expected path: candidates[0].content.parts[0].text
+    """
+    try:
+        candidates = data.get("candidates") or []
+        part = candidates[0]["content"]["parts"][0]["text"]
+        sql = part.strip()
+        # Clean fenced code if present
+        if sql.startswith("```"):
+            sql = sql.strip("`")
+            if "\n" in sql:
+                sql = sql.split("\n", 1)[1]
+        return sql.strip()
+    except Exception:
+        return None
+
+
+def generate_sql_from_text(question: str) -> str | None:
+    """
+    Send the NL question to an LLM endpoint (Gemini-compatible) and return generated SQL.
+    Requires `LLM_ENDPOINT` and `LLM_API_KEY` in st.secrets.
+    """
+    endpoint = st.secrets.get("LLM_ENDPOINT")
+    api_key = st.secrets.get("LLM_API_KEY")
+    if not endpoint or not api_key:
+        st.warning("Missing LLM endpoint or API key in st.secrets.")
+        return None
+
+    schema_text = get_db_schema_text()
+
+    # Prompt keeps the model constrained to SQL only.
+    prompt = (
+        "You are an assistant that writes DuckDB SQL for a MotherDuck database.\n"
+        "Use ONLY the tables and columns listed below.\n"
+        "Do NOT invent table or column names.\n"
+        "Do NOT use placeholders like 'your_table_name'.\n"
+        "When returning teams, join real_deal.dim_teams on team_id = id and display dim_teams.display_name as team_name.\n"
+        "Assume the user provides full official team names; normalize to title case (so casing doesn't matter) and match exactly (case-insensitive) to dim_teams.display_name or dim_teams.name. Do NOT use wildcards that can match multiple teams.\n"
+        "Use the correct tables for metrics: bt.team_stats (team_id, win_pct, avg_points_scored, avg_points_allowed, etc.), join via team_id.\n"
+        "When filtering by season, use the actual column from the target table: fact_rankings uses season_year; bt.team_stats does NOT have a season column, so do not apply season filters to bt.team_stats unless you join to a table that has season_year. Do not invent column names.\n"
+        "For poll_name, default to filtering within ('AFCA Coaches Poll','AP Poll','CFP Rankings'); only use other poll_name values if the user explicitly asks for bt rankings.\n"
+        "If the user mentions BT/Bradley–Terry rankings, use bt.rankings; if they ask for BT ranking history, use bt.model_ranking_history. Apply rank filters/order accordingly.\n"
+        "When querying rankings (non-BT), filter to the latest ingest_timestamp (max) for the chosen poll, so each rank maps to a single team (e.g., top 25 rows for AP Poll). For BT tables, do not assume a season_year column—use what exists in bt.rankings / bt.model_ranking_history (e.g., updated_at) and compute week_number if needed using the 2025-08-23 start rule.\n"
+        "When using CTEs and UNION/UNION ALL, declare all CTEs at the top, then perform the UNION; do not place WITH clauses after a UNION.\n"
+        "If comparing BT rankings vs another poll (e.g., CFP, AP, AFCA), produce a wide result with columns team_name, bt_rank, other_rank (one row per team). Use bt.rankings for BT ranks; for the other poll, take the latest ingest_timestamp from real_deal.fact_rankings with the requested poll_name. Do NOT output a long table with ranking_source.\n"
+        "If the user asks for a ranking trend/history, return week-level rows (season_year, week_number, rank) ordered by week_number; only collapse to the latest ingest_timestamp when they want the current snapshot.\n"
+        "For college football week_number in 2025, treat 2025-08-23 as the start of week 1 (not calendar ISO weeks); compute week_number as datediff('week', DATE '2025-08-23', the_date) + 1.\n"
+        "For percentage-like fields (e.g., win_pct), multiply by 100 before displaying.\n"
+        "Round numeric outputs to 2 decimal places (use ROUND(value, 2)).\n"
+        "Return columns that are chart-friendly: include a categorical column (e.g., team_name or a label like 'Team' vs 'League Average') and separate numeric metric columns. For comparisons, output multiple rows or a label column instead of a single wide row.\n"
+        "Return ONLY the SQL query, no explanation, no markdown fences.\n\n"
+        f"{schema_text}\n\n"
+        f"Question: {question}\n"
+        "Write a single DuckDB SQL query that answers this question."
+    )
+
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1},
+    }
+    headers = {"Content-Type": "application/json"}
+
+    try:
+        resp = requests.post(
+            endpoint,
+            params={"key": api_key},
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001
+        st.error(f"LLM request failed: {e}")
+        return None
+
+    # Try Gemini shape first; fall back to {sql: "..."} if a proxy returns that.
+    sql = _extract_sql_from_gemini(data) or data.get("sql")
+    if not sql:
+        st.error("LLM response missing SQL content.")
+        return None
+    return sql.strip()
 
 
 # ------------------------------------------------------------------------------
@@ -223,6 +348,7 @@ page = st.sidebar.radio(
         "3. Ranking Evolution",
         "4. Head-to-Head",
         "5. League Analytics",
+        "6. Text to SQL",
     ],
 )
 
@@ -875,3 +1001,155 @@ elif page == "5. League Analytics":
                 title=f"Clusters by {metric_label(x_metric)} & {metric_label(y_metric)}",
             )
             st.plotly_chart(fig_cluster, use_container_width=True)
+
+
+# ============================================================================
+# 6. Text to SQL
+# ============================================================================
+elif page == "6. Text to SQL":
+    st.subheader("💬 Text to SQL (MotherDuck)")
+    st.caption("Ask a question in natural language. An LLM will propose SQL, then we run it on MotherDuck and show the results.")
+
+    # Prompt examples + history selector
+    sample_prompts = [
+        "Top 25 teams by average score in 2025 season",
+        "Show the AP Poll weekly ranking history for Oregon Ducks in the 2025 season",
+        "Compare Ohio State Buckeyes and Michigan Wolverines: avg_points_scored, avg_points_allowed, win_pct",
+        "Top 5 defenses by avg_points_allowed in 2025",
+    ]
+    with st.expander("Prompt examples", expanded=False):
+        cols = st.columns(2)
+        for i, p in enumerate(sample_prompts):
+            if cols[i % 2].button(p, key=f"sample_{i}"):
+                st.session_state["text2sql_question"] = p
+
+    history = st.session_state.get("text2sql_history", [])
+    def set_from_history():
+        sel = st.session_state.get("text2sql_history_select")
+        if sel:
+            st.session_state["text2sql_question"] = sel
+
+    st.selectbox(
+        "Your previous questions",
+        options=[""] + history,
+        format_func=lambda x: "Select a past question" if x == "" else x,
+        key="text2sql_history_select",
+        on_change=set_from_history,
+    )
+
+    question = st.text_area(
+        "Your question",
+        value=st.session_state.get("text2sql_question", ""),
+        placeholder="e.g., Top 5 teams by average points scored in 2025 season",
+        key="text2sql_question",
+    )
+
+    run_btn = st.button("Generate and Run SQL", type="primary", disabled=not question.strip(), key="text2sql_run")
+
+    # Cached results to keep chart controls usable after selection changes
+    last_sql = st.session_state.get("text2sql_sql")
+    last_df = st.session_state.get("text2sql_df")
+
+    if run_btn:
+        with st.spinner("Generating SQL via LLM..."):
+            sql = generate_sql_from_text(question.strip())
+
+        if sql:
+            st.markdown("#### Generated SQL")
+            st.code(sql, language="sql")
+
+            if not is_sql_safe(sql):
+                st.error("Generated SQL contains write/DDL operations. Blocking execution.")
+                st.stop()
+
+            with st.spinner("Running query..."):
+                try:
+                    df = run_query(sql)
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"Query failed: {e}")
+                    df = None
+
+            if df is not None:
+                st.session_state["text2sql_sql"] = sql
+                st.session_state["text2sql_df"] = df
+                # keep a short history of unique questions
+                if question.strip():
+                    hist = st.session_state.get("text2sql_history", [])
+                    if question.strip() not in hist:
+                        hist = [question.strip()] + hist
+                        st.session_state["text2sql_history"] = hist[:10]
+                if df.empty:
+                    st.info("Query ran successfully but returned no rows.")
+                else:
+                    st.success(f"Returned {len(df)} rows.")
+                    df_show = df.copy()
+                    df_show.insert(0, "#", range(1, len(df_show) + 1))
+                    st.dataframe(df_show, use_container_width=True)
+
+                    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+                    if numeric_cols:
+                        st.markdown("#### Quick Chart")
+                        non_numeric_cols = df.select_dtypes(exclude=["number"]).columns.tolist()
+                        default_x = (
+                            "week_number"
+                            if "week_number" in df.columns
+                            else (non_numeric_cols[0] if non_numeric_cols else df.columns[0])
+                        )
+                        default_y = "current_rank" if "current_rank" in numeric_cols else numeric_cols[0]
+                        x_col = st.selectbox("X axis", df.columns, index=list(df.columns).index(default_x), key="text2sql_x")
+                        y_col = st.selectbox("Y axis (numeric)", numeric_cols, index=numeric_cols.index(default_y), key="text2sql_y")
+                        chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter"], key="text2sql_chart")
+
+                        try:
+                            if chart_type == "Bar":
+                                fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                            elif chart_type == "Line":
+                                fig = px.line(df, x=x_col, y=y_col, title=f"{y_col} over {x_col}")
+                            else:
+                                fig = px.scatter(df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                            st.plotly_chart(fig, use_container_width=True)
+                        except Exception as e:  # noqa: BLE001
+                            st.warning(f"Unable to render chart: {e}")
+
+    # Re-display cached results so chart controls don't reset on selection changes
+    if not run_btn and last_df is not None and not last_df.empty:
+        st.markdown("#### Generated SQL (cached)")
+        st.code(last_sql or "", language="sql")
+        st.success(f"Returned {len(last_df)} rows.")
+        df_show = last_df.copy()
+        df_show.insert(0, "#", range(1, len(df_show) + 1))
+        st.dataframe(df_show, use_container_width=True)
+
+        numeric_cols = last_df.select_dtypes(include=["number"]).columns.tolist()
+        if numeric_cols:
+            st.markdown("#### Quick Chart")
+            non_numeric_cols = last_df.select_dtypes(exclude=["number"]).columns.tolist()
+            default_x = (
+                "week_number"
+                if "week_number" in last_df.columns
+                else (non_numeric_cols[0] if non_numeric_cols else last_df.columns[0])
+            )
+            default_y = "current_rank" if "current_rank" in numeric_cols else numeric_cols[0]
+
+            x_val = st.session_state.get("text2sql_x", default_x)
+            if x_val not in last_df.columns:
+                x_val = default_x
+            y_val = st.session_state.get("text2sql_y", default_y)
+            if y_val not in numeric_cols:
+                y_val = default_y
+            chart_val = st.session_state.get("text2sql_chart", "Bar")
+
+            x_col = st.selectbox("X axis", last_df.columns, index=list(last_df.columns).index(x_val), key="text2sql_x")
+            y_col = st.selectbox("Y axis (numeric)", numeric_cols, index=numeric_cols.index(y_val), key="text2sql_y")
+            chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter"], index=["Bar","Line","Scatter"].index(chart_val) if chart_val in ["Bar","Line","Scatter"] else 0, key="text2sql_chart")
+
+            try:
+                if chart_type == "Bar":
+                    fig = px.bar(last_df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                elif chart_type == "Line":
+                    fig = px.line(last_df, x=x_col, y=y_col, title=f"{y_col} over {x_col}")
+                else:
+                    fig = px.scatter(last_df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:  # noqa: BLE001
+                st.warning(f"Unable to render chart: {e}")

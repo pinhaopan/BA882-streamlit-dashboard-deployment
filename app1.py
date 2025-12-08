@@ -1415,14 +1415,14 @@ elif page == "2. Team Performance":
             
             This chart shows **5-game moving averages** of points scored (green) and points allowed (red).
             
-            #### 🤔 Why 5-Game Moving Average?
+            #### Why 5-Game Moving Average?
             
             **Problem with raw game-by-game scores:**
-```
+
             Week 1: 45 pts
             Week 2: 28 pts  ← Big drop! Why?
             Week 3: 52 pts  ← Big jump! Why?
-```
+
             - Too much **noise** - single games affected by weather, opponent strength, randomness
             - Hard to see actual **trends**
             
@@ -1453,38 +1453,38 @@ elif page == "2. Team Performance":
             #### 🎯 Line Relationship Patterns:
             
             **1. Scissors Pattern (Ideal)** 🔥
-```
+
             Green ↗ (Offense improving)
             Red ↘ (Defense improving)
-```
+
             → Both sides of ball getting better!
             
             **2. Reverse Scissors (Danger)** ⚠️
-```
+
             Green ↘ (Offense declining)
             Red ↗ (Defense declining)
-```
+
             → Team falling apart
             
             **3. Both Lines High**
-```
+
             Green: 35+ pts
             Red: 28+ pts
-```
+
             → High-tempo, shootout style (exciting but risky)
             
             **4. Both Lines Low**
-```
+
             Green: 20- pts
             Red: 15- pts
-```
+
             → Defensive, low-scoring grind-it-out style
             
             **5. Crossover Point** ✂️
-```
+
             Before crossover: Offense > Defense
             After crossover: Defense > Offense
-```
+
             → Team identity shift!
             
             #### 💡 Pro Tips:
@@ -1569,54 +1569,54 @@ elif page == "2. Team Performance":
             #### 📊 Relationship with Zero Line:
             
             **Always Above 0** ✅
-```
+
             +10 |————————
                 |
               0 |
-```
+
             → Winning consistently all season
             
             **Hovering Around 0** ⚖️
-```
+
              +5 | ╱╲  ╱╲
               0 |╱  ╲╱  ╲
              -5 |
-```
+
             → Close games, 50-50 team, unpredictable
             
             **Always Below 0** ❌
-```
+
               0 |
                 |
             -10 |————————
-```
+
             → Getting beaten all season
             
             #### 🎯 Cross-Validation with Other Tabs:
             
             **Scenario 1: Margin widening, but scoring down**
-```
+
             Points Scored:  35 → 30 (↓)
             Points Allowed: 28 → 18 (↓)
             Margin:         +7 → +12 (↑)
-```
+
             **Interpretation:** Not offense getting better - it's **defense improving**!
             Team transformed into defensive squad.
             
             **Scenario 2: Margin shrinking, but scoring up**
-```
+
             Points Scored:  28 → 35 (↑)
             Points Allowed: 21 → 32 (↑)
             Margin:         +7 → +3 (↓)
-```
+
             **Interpretation:** Offense better but **defense collapsed**! Danger sign!
             
             **Scenario 3: Margin stable, both scores up**
-```
+
             Points Scored:  28 → 38 (↑)
             Points Allowed: 21 → 31 (↑)
             Margin:         +7 → +7 (=)
-```
+
             **Interpretation:** Pace of play increased. Now playing **shootout style**.
             
             #### 💡 Pro Tips:

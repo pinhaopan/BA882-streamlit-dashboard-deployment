@@ -1097,8 +1097,17 @@ elif page == "2. Team Performance":
         # Show team logo
         if team_logo and not pd.isna(team_logo):
             with col_logo:
-                st.markdown(f"{selected_team}") 
-                st.image(team_logo, width=80) 
+                logo_html = f"""
+                <div style="text-align: center;">
+                <img src="{team_logo}" 
+                    alt="{selected_team}" 
+                    title="{selected_team}"
+                    style="width: 80px; height: 80px; object-fit: contain; cursor: pointer;"
+                    onmouseover="this.style.transform='scale(1.1)'; this.style.transition='transform 0.2s';"
+                    onmouseout="this.style.transform='scale(1)';">
+                </div>
+                """
+                st.markdown(logo_html, unsafe_allow_html=True)
         else:
             col_logo.markdown(f"### {selected_team[:3]}") 
         

@@ -1250,109 +1250,109 @@ elif page == "2. Team Performance":
 
     st.markdown("---")
 
-# ========================================================================
-# 2-4) Radar Chart with Standardized Metrics (0-1 scale)
-# ========================================================================
-st.markdown("### 🕸 Multi-dimensional Performance Radar")
+    # ========================================================================
+    # 2-4) Radar Chart with Standardized Metrics (0-1 scale)
+    # ========================================================================
+    st.markdown("### 🕸 Multi-dimensional Performance Radar")
 
-radar_metrics = [
-    "win_pct",
-    "avg_points_scored",
-    "avg_points_allowed",
-    "avg_total_yards",
-    "avg_yards_allowed",
-    "turnover_margin",
-]
+    radar_metrics = [
+        "win_pct",
+        "avg_points_scored",
+        "avg_points_allowed",
+        "avg_total_yards",
+        "avg_yards_allowed",
+        "turnover_margin",
+    ]
 
-@st.cache_data
-def calculate_standardized_radar_data(df_stats, selected_team, metrics):
-    """
-    Standardize all metrics to 0-1 scale, then calculate median and team values.
-    For metrics where lower is better, invert the scale.
-    """
-    standardized_data = {}
-    
-    for metric in metrics:
-        values = df_stats[metric].copy()
+    @st.cache_data
+    def calculate_standardized_radar_data(df_stats, selected_team, metrics):
+        """
+        Standardize all metrics to 0-1 scale, then calculate median and team values.
+        For metrics where lower is better, invert the scale.
+        """
+        standardized_data = {}
         
-        # Get min and max
-        min_val = values.min()
-        max_val = values.max()
+        for metric in metrics:
+            values = df_stats[metric].copy()
+            
+            # Get min and max
+            min_val = values.min()
+            max_val = values.max()
+            
+            # Standardize to 0-1
+            if max_val != min_val:
+                standardized = (values - min_val) / (max_val - min_val)
+            else:
+                standardized = pd.Series([0.5] * len(values), index=values.index)
+            
+            # If lower is better, invert the scale
+            if not HIGHER_IS_BETTER.get(metric, True):
+                standardized = 1 - standardized
+            
+            standardized_data[metric] = standardized
         
-        # Standardize to 0-1
-        if max_val != min_val:
-            standardized = (values - min_val) / (max_val - min_val)
-        else:
-            standardized = pd.Series([0.5] * len(values), index=values.index)
+        # Create DataFrame with standardized values
+        std_df = pd.DataFrame(standardized_data)
+        std_df['team_name'] = df_stats['team_name'].values
         
-        # If lower is better, invert the scale
-        if not HIGHER_IS_BETTER.get(metric, True):
-            standardized = 1 - standardized
+        # Calculate median for each metric
+        median_values = std_df[metrics].median()
         
-        standardized_data[metric] = standardized
-    
-    # Create DataFrame with standardized values
-    std_df = pd.DataFrame(standardized_data)
-    std_df['team_name'] = df_stats['team_name'].values
-    
-    # Calculate median for each metric
-    median_values = std_df[metrics].median()
-    
-    # Get team values
-    team_values = std_df[std_df['team_name'] == selected_team][metrics].iloc[0]
-    
-    return team_values.tolist(), median_values.tolist()
+        # Get team values
+        team_values = std_df[std_df['team_name'] == selected_team][metrics].iloc[0]
+        
+        return team_values.tolist(), median_values.tolist()
 
-team_radar_values, median_radar_values = calculate_standardized_radar_data(
-    df_stats, selected_team, radar_metrics
-)
-
-labels = [metric_label(c) for c in radar_metrics]
-
-radar_fig = go.Figure()
-
-# Add team trace
-radar_fig.add_trace(
-    go.Scatterpolar(
-        r=team_radar_values,
-        theta=labels,
-        fill="toself",
-        name=selected_team,
-        line=dict(color='blue', width=2),
-        fillcolor='rgba(0, 0, 255, 0.2)'
+    team_radar_values, median_radar_values = calculate_standardized_radar_data(
+        df_stats, selected_team, radar_metrics
     )
-)
 
-# Add median trace
-radar_fig.add_trace(
-    go.Scatterpolar(
-        r=median_radar_values,
-        theta=labels,
-        fill="toself",
-        name="League Median",
-        line=dict(color='gray', width=2, dash='dash'),
-        fillcolor='rgba(128, 128, 128, 0.1)'
-    )
-)
+    labels = [metric_label(c) for c in radar_metrics]
 
-radar_fig.update_layout(
-    polar=dict(
-        radialaxis=dict(
-            visible=True,
-            range=[0, 1], 
-            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
-            ticktext=['0', '0.25', '0.5', '0.75', '1.0']
+    radar_fig = go.Figure()
+
+    # Add team trace
+    radar_fig.add_trace(
+        go.Scatterpolar(
+            r=team_radar_values,
+            theta=labels,
+            fill="toself",
+            name=selected_team,
+            line=dict(color='blue', width=2),
+            fillcolor='rgba(0, 0, 255, 0.2)'
         )
-    ),
-    showlegend=True,
-    height=500
-)
+    )
 
-st.plotly_chart(radar_fig, use_container_width=True)
+    # Add median trace
+    radar_fig.add_trace(
+        go.Scatterpolar(
+            r=median_radar_values,
+            theta=labels,
+            fill="toself",
+            name="League Median",
+            line=dict(color='gray', width=2, dash='dash'),
+            fillcolor='rgba(128, 128, 128, 0.1)'
+        )
+    )
 
-st.caption("💡 **How to read:** All metrics are standardized to 0-1 scale (0 = worst in league, 1 = best in league). For defensive metrics (points/yards allowed), the scale is inverted so that higher values are better. The dashed gray line shows the league median (typically around 0.5).")
+    radar_fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1], 
+                tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+                ticktext=['0', '0.25', '0.5', '0.75', '1.0']
+            )
+        ),
+        showlegend=True,
+        height=500
+    )
 
-st.markdown("---")
+    st.plotly_chart(radar_fig, use_container_width=True)
+
+    st.caption("💡 **How to read:** All metrics are standardized to 0-1 scale (0 = worst in league, 1 = best in league). For defensive metrics (points/yards allowed), the scale is inverted so that higher values are better. The dashed gray line shows the league median (typically around 0.5).")
+
+    st.markdown("---")
 
     # ========================================================================
     # 2-5) Bar chart – detailed comparison

@@ -1076,7 +1076,7 @@ elif page == "2. Team Performance":
     
     if len(df_games) > 0:
         # Game log summary
-        col1, col2, col3, col4 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
         
         wins = (df_games['result'] == 'W').sum()
         losses = (df_games['result'] == 'L').sum()

@@ -1419,8 +1419,8 @@ elif page == "2. Team Performance":
             
             **Problem with raw game-by-game scores:**
 
-            Week 1: 45 pts
-            Week 2: 28 pts  ← Big drop! Why?
+            Week 1: 45 pts 
+            Week 2: 28 pts  ← Big drop! Why? 
             Week 3: 52 pts  ← Big jump! Why?
 
             - Too much **noise** - single games affected by weather, opponent strength, randomness
@@ -1454,35 +1454,35 @@ elif page == "2. Team Performance":
             
             **1. Scissors Pattern (Ideal)** 🔥
 
-            Green ↗ (Offense improving)
+            Green ↗ (Offense improving) 
             Red ↘ (Defense improving)
 
             → Both sides of ball getting better!
             
             **2. Reverse Scissors (Danger)** ⚠️
 
-            Green ↘ (Offense declining)
+            Green ↘ (Offense declining) 
             Red ↗ (Defense declining)
 
             → Team falling apart
             
             **3. Both Lines High**
 
-            Green: 35+ pts
+            Green: 35+ pts 
             Red: 28+ pts
 
             → High-tempo, shootout style (exciting but risky)
             
             **4. Both Lines Low**
 
-            Green: 20- pts
+            Green: 20- pts 
             Red: 15- pts
 
             → Defensive, low-scoring grind-it-out style
             
             **5. Crossover Point** ✂️
 
-            Before crossover: Offense > Defense
+            Before crossover: Offense > Defense 
             After crossover: Defense > Offense
 
             → Team identity shift!
@@ -1570,25 +1570,13 @@ elif page == "2. Team Performance":
             
             **Always Above 0** ✅
 
-            +10 |————————
-                |
-              0 |
-
             → Winning consistently all season
             
             **Hovering Around 0** ⚖️
 
-             +5 | ╱╲  ╱╲
-              0 |╱  ╲╱  ╲
-             -5 |
-
             → Close games, 50-50 team, unpredictable
             
             **Always Below 0** ❌
-
-              0 |
-                |
-            -10 |————————
 
             → Getting beaten all season
             

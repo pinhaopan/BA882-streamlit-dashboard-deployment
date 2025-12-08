@@ -1098,7 +1098,7 @@ elif page == "2. Team Performance":
         if team_logo and not pd.isna(team_logo):
             with col_logo:
                 logo_html = f"""
-                <div style="text-align: center;">
+                <div style="text-align: left;">
                 <img src="{team_logo}" 
                     alt="{selected_team}" 
                     title="{selected_team}"
@@ -1333,10 +1333,48 @@ elif page == "2. Team Performance":
             if len(df_trends) >= 6:
                 early_winpct = df_trends.iloc[:len(df_trends)//2]['win_pct_running'].iloc[-1]
                 current_winpct = df_trends['win_pct_running'].iloc[-1]
-                if abs(current_winpct - early_winpct) > 0.1:
-                    trend = "improved" if current_winpct > early_winpct else "declined"
-                    st.info(f"📊 **Trend:** Win % has {trend} from {early_winpct:.1%} (mid-season) to {current_winpct:.1%} (current)")
-        
+                change = current_winpct - early_winpct
+
+                if abs(change) > 0.1:
+                    trend = "improved" if change > 0 else "declined"
+                    icon = "📈" if change > 0 else "📉"
+                    st.info(f"{icon} **Trend:** Win % has {trend} from {early_winpct:.1%} (mid-season) to {current_winpct:.1%} (current) - a change of {change:+.1%}")
+
+            with st.expander("💡 How to Interpret Win % Trend"):
+                    st.markdown("""
+                    ### 📊 Understanding Win % Trend
+                    
+                    This chart shows the **cumulative win percentage** over the season. Each point represents the team's overall record up to that week.
+                    
+                    #### 🔍 What to Look For:
+                    
+                    **📈 Upward Trend (Improving)**
+                    - Team is winning more games as season progresses
+                    - Possible reasons: tactical adjustments, player development, injury recoveries, easier schedule
+                    - **Positive sign** for playoffs
+                    
+                    **📉 Downward Trend (Declining)**
+                    - Team is losing more games recently
+                    - Possible reasons: key injuries, fatigue, opponents adapting to tactics, harder schedule
+                    - **Warning sign** - investigate causes
+                    
+                    **➡️ Flat Trend (Stable)**
+                    - Consistent performance throughout season
+                    - If high (70%+): Strong, reliable team
+                    - If low (30%-): Struggling team
+                    
+                    **🌊 High Volatility (Wavy line)**
+                    - Inconsistent performance
+                    - Team may be "match-up dependent" or unpredictable
+                    
+                    #### 💡 Pro Tip:
+                    Compare with **Strength of Schedule** to understand if trend is due to team improvement or opponent difficulty changes.
+                    
+                    **Example:**
+                    - Win % rising + SoS increasing = Team genuinely improving ✅
+                    - Win % rising + SoS decreasing = Might be easier schedule ⚠️
+                    """)
+
         with tab2:
             fig_scoring = go.Figure()
             fig_scoring.add_trace(go.Scatter(
@@ -1364,13 +1402,106 @@ elif page == "2. Team Performance":
             )
             st.plotly_chart(fig_scoring, use_container_width=True)
             
-            # Recent form
+            # Recent form analysis
             if len(df_trends) >= 5:
                 recent_5 = df_trends.tail(5)
                 recent_ppg = recent_5['team_score'].mean()
                 recent_papg = recent_5['opponent_score'].mean()
                 st.info(f"📊 **Last 5 games:** Scoring {recent_ppg:.1f} PPG, Allowing {recent_papg:.1f} PPG")
-        
+
+            with st.expander("💡 How to Interpret Scoring Trends"):
+                st.markdown("""
+            ### 📊 Understanding Scoring Trends
+            
+            This chart shows **5-game moving averages** of points scored (green) and points allowed (red).
+            
+            #### 🤔 Why 5-Game Moving Average?
+            
+            **Problem with raw game-by-game scores:**
+```
+            Week 1: 45 pts
+            Week 2: 28 pts  ← Big drop! Why?
+            Week 3: 52 pts  ← Big jump! Why?
+```
+            - Too much **noise** - single games affected by weather, opponent strength, randomness
+            - Hard to see actual **trends**
+            
+            **Solution: 5-Game Moving Average**
+            - Smooths out random fluctuations
+            - Shows true performance trends
+            - Represents "recent form" (~1 month of play)
+            - **Balance:** Responsive enough to catch changes, stable enough to filter noise
+            
+            #### 🔍 What to Look For:
+            
+            **📈 Green Line (Points Scored) Rising**
+            - Offense improving!
+            - Possible causes: QB finding rhythm, O-line gelling, play-calling improvements
+            
+            **📉 Green Line Falling**
+            - Offense struggling
+            - Check: Key injuries? Opponents' defenses getting stronger? (see SoS)
+            
+            **📉 Red Line (Points Allowed) Falling** ✅
+            - Defense improving! (Lower is better)
+            - Possible causes: Defensive adjustments working, players adapting to scheme
+            
+            **📈 Red Line Rising** ❌
+            - Defense struggling
+            - Check: Defensive injuries? Fatigue? Stronger opponents?
+            
+            #### 🎯 Line Relationship Patterns:
+            
+            **1. Scissors Pattern (Ideal)** 🔥
+```
+            Green ↗ (Offense improving)
+            Red ↘ (Defense improving)
+```
+            → Both sides of ball getting better!
+            
+            **2. Reverse Scissors (Danger)** ⚠️
+```
+            Green ↘ (Offense declining)
+            Red ↗ (Defense declining)
+```
+            → Team falling apart
+            
+            **3. Both Lines High**
+```
+            Green: 35+ pts
+            Red: 28+ pts
+```
+            → High-tempo, shootout style (exciting but risky)
+            
+            **4. Both Lines Low**
+```
+            Green: 20- pts
+            Red: 15- pts
+```
+            → Defensive, low-scoring grind-it-out style
+            
+            **5. Crossover Point** ✂️
+```
+            Before crossover: Offense > Defense
+            After crossover: Defense > Offense
+```
+            → Team identity shift!
+            
+            #### 💡 Pro Tips:
+            
+            - **Gap between lines = Point margin**
+              - Wider gap = Dominant team
+              - Narrow gap = Close games
+            
+            - **Compare to KPIs:**
+              - Does trend match avg points scored/allowed?
+              - Recent trend might differ from season average
+            
+            - **Context matters:**
+              - Check SoS: Are opponents getting harder/easier?
+              - Check Game Log: Any pattern in wins/losses?
+            """)
+
         with tab3:
             fig_margin = px.line(
                 df_trends,
@@ -1388,6 +1519,125 @@ elif page == "2. Team Performance":
             )
             fig_margin.update_layout(height=400, hovermode='x unified')
             st.plotly_chart(fig_margin, use_container_width=True)
+
+            with st.expander("💡 How to Interpret Margin Trend"):
+                st.markdown("""
+            ### 📊 Understanding Point Margin Trend
+            
+            This chart shows the **5-game moving average** of point differential (team score - opponent score).
+            
+            #### 📏 Margin Scale:
+            
+            | Avg Margin | Rating | Meaning |
+            |------------|--------|---------|
+            | **+15 or more** | 🔥 Dominant | Crushing opponents |
+            | **+10 to +15** | 💪 Strong | Winning decisively |
+            | **+5 to +10** | ✅ Solid | Winning comfortably |
+            | **+0 to +5** | 😐 Close wins | Winning by small margins (risky) |
+            | **-0 to -5** | ⚠️ Close losses | Losing by small margins (close to winning) |
+            | **-5 to -10** | 📉 Weak | Losing regularly |
+            | **-10 or worse** | 💔 Dominated | Getting blown out |
+            
+            #### 🔍 What to Look For:
+            
+            **📈 Margin Widening (ex: +5 → +12)**
+            - Team is winning by larger margins
+            - Possible reasons:
+              - Team getting stronger
+              - Better execution
+              - Improved chemistry
+              - *Check SoS:* Or are opponents getting weaker?
+            
+            **📉 Margin Narrowing (ex: +12 → +5)**
+            - Games becoming closer
+            - Possible reasons:
+              - Team strength declining
+              - Opponents getting stronger
+              - Key injuries
+              - Fatigue
+            
+            **🔄 Margin Flips Positive (ex: -3 → +6)**
+            - Team "turned the corner"!
+            - Major improvement or adjustment
+            - **Good sign** for playoffs
+            
+            **🔄 Margin Flips Negative (ex: +8 → -2)**
+            - Team collapse
+            - Something went seriously wrong
+            - **Major red flag**
+            
+            #### 📊 Relationship with Zero Line:
+            
+            **Always Above 0** ✅
+```
+            +10 |————————
+                |
+              0 |
+```
+            → Winning consistently all season
+            
+            **Hovering Around 0** ⚖️
+```
+             +5 | ╱╲  ╱╲
+              0 |╱  ╲╱  ╲
+             -5 |
+```
+            → Close games, 50-50 team, unpredictable
+            
+            **Always Below 0** ❌
+```
+              0 |
+                |
+            -10 |————————
+```
+            → Getting beaten all season
+            
+            #### 🎯 Cross-Validation with Other Tabs:
+            
+            **Scenario 1: Margin widening, but scoring down**
+```
+            Points Scored:  35 → 30 (↓)
+            Points Allowed: 28 → 18 (↓)
+            Margin:         +7 → +12 (↑)
+```
+            **Interpretation:** Not offense getting better - it's **defense improving**!
+            Team transformed into defensive squad.
+            
+            **Scenario 2: Margin shrinking, but scoring up**
+```
+            Points Scored:  28 → 35 (↑)
+            Points Allowed: 21 → 32 (↑)
+            Margin:         +7 → +3 (↓)
+```
+            **Interpretation:** Offense better but **defense collapsed**! Danger sign!
+            
+            **Scenario 3: Margin stable, both scores up**
+```
+            Points Scored:  28 → 38 (↑)
+            Points Allowed: 21 → 31 (↑)
+            Margin:         +7 → +7 (=)
+```
+            **Interpretation:** Pace of play increased. Now playing **shootout style**.
+            
+            #### 💡 Pro Tips:
+            
+            - **Margin = Quality of wins/losses**
+              - +15 margin = Dominant wins (crushing opponents)
+              - +3 margin = Lucky wins (could easily lose)
+            
+            - **Trend = Trajectory**
+              - Rising margin = Team improving, peaking at right time
+              - Falling margin = Team declining, might miss playoffs
+            
+            - **Volatility = Consistency**
+              - Smooth line = Predictable team
+              - Jagged line = Unpredictable, match-up dependent
+            
+            - **Always check context:**
+              - SoS: Are opponents getting harder/easier?
+              - Injuries: Did key players get hurt/return?
+              - Game Log: Win streak? Losing streak?
+            """)
     else:
         st.info("Not enough game data to show trends.")
 

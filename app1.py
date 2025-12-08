@@ -1107,12 +1107,12 @@ elif page == "2. Team Performance":
                 'team_score': 'Pts',
                 'opponent_score': 'Opp Pts',
                 'team_yards': 'Yards',
-                'team_turnovers': 'TO'
+                'team_turnovers': 'Turnovers'
             }),
             use_container_width=True,
             hide_index=True,
             column_config={
-                "": st.column_config.ImageColumn(
+                "Opponent Logo": st.column_config.ImageColumn(
                     width="small"  # small, medium, large
                 ),
                 "Date": st.column_config.DateColumn(format="MMM DD, YYYY"),

@@ -1881,107 +1881,152 @@ elif page == "2. Team Performance":
 elif page == "3. Ranking Evolution":
     st.subheader("📉 Bradley–Terry Ranking – Evolution & Analytics")
 
+    st.markdown("""
+    Explore team rankings from our Bradley-Terry model, compare with traditional polls (AP & Coaches),
+    and read AI-generated team analyses.
+    """)
+
     with st.spinner("Loading rankings & team stats..."):
-        df_hist = run_query(
+        # Load Bradley-Terry rankings
+        df_rank_now = run_query(
             """
             SELECT
-                h.team_id,
+                r.team_id,
                 COALESCE(t.display_name, t.name) AS team_name,
-                h.rank,
-                h.strength,
-                h.prob_vs_avg,
-                h.updated_at
-            FROM bt.model_ranking_history AS h
+                r.rank,
+                r.strength,
+                r.prob_vs_avg
+            FROM bt.rankings AS r
             LEFT JOIN real_deal.dim_teams AS t
-                ON h.team_id = t.id
-            ORDER BY h.updated_at
+                ON r.team_id = t.id
+            ORDER BY r.rank
             """
         )
+        
+        # Load team stats for additional context
         df_stats, benchmark = load_team_stats_with_benchmark()
 
-    if df_hist.empty:
-        st.warning("The table bt.model_ranking_history is currently empty.")
-    else:
-        team_options = df_hist["team_name"].dropna().unique().tolist()
-        selected_team = st.selectbox("Select a team to view ranking history", sorted(team_options))
-
-        df_team = df_hist[df_hist["team_name"] == selected_team].sort_values("updated_at")
-
-        c1, c2 = st.columns(2)
-
-        rank_fig = px.line(
-            df_team,
-            x="updated_at",
-            y="rank",
-            title=f"{selected_team} – Rank over time (lower is better)",
+    # ========================================================================
+    # 3-1) Current Rankings Dashboard with AI Summaries
+    # ========================================================================
+    st.markdown("### 🏆 Current Bradley-Terry Rankings")
+    st.caption("💡 Our statistical model ranks teams based on game results and strength of schedule")
+    
+    # Top section: Rank selector + Team summary
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("#### 🔍 Select Rank")
+        
+        # Rank selector (1-25)
+        selected_rank = st.selectbox(
+            "Choose a rank to view team details:",
+            range(1, 26),
+            format_func=lambda x: f"#{x}",
+            key="rank_selector"
         )
-        rank_fig.update_yaxes(autorange="reversed")
-        c1.plotly_chart(rank_fig, use_container_width=True)
-
-        strength_fig = px.line(
-            df_team,
-            x="updated_at",
-            y="strength",
-            title=f"{selected_team} – Strength over time",
-        )
-        c2.plotly_chart(strength_fig, use_container_width=True)
-
-        st.markdown("---")
-
-    st.markdown("### 🔗 Current Ranking vs Performance Metrics")
-
-    df_rank_now = run_query(
-        """
-        SELECT
-            r.team_id,
-            COALESCE(t.display_name, t.name) AS team_name,
-            r.rank,
-            r.strength,
-            r.prob_vs_avg
-        FROM bt.rankings AS r
-        LEFT JOIN real_deal.dim_teams AS t
-            ON r.team_id = t.id
-        ORDER BY r.rank
-        """
-    )
-
-    df_join = pd.merge(
-        df_rank_now,
-        df_stats[["team_id"] + TEAM_METRICS],
-        on="team_id",
-        how="left",
-    )
-
-    metric_for_corr = st.selectbox(
-        "Choose a metric for correlation with Rank:",
-        TEAM_METRICS,
-        index=TEAM_METRICS.index("win_pct"),
-        format_func=metric_label,
-        key="rank_metric",
-    )
-
-    scat_col1, scat_col2 = st.columns(2)
-
-    fig_scatter = px.scatter(
-        df_join,
-        x=metric_for_corr,
-        y="rank",
-        hover_name="team_name",
-        trendline="ols",
-        title=f"Rank vs {metric_label(metric_for_corr)}",
-    )
-    fig_scatter.update_yaxes(autorange="reversed")
-    scat_col1.plotly_chart(fig_scatter, use_container_width=True)
-
-    corr_val = df_join[[metric_for_corr, "rank"]].corr().iloc[0, 1]
-    scat_col2.metric(
-        "Correlation (Rank vs Metric, Pearson)",
-        f"{corr_val:.3f}",
-        help="Negative = higher metric correlates with better rank (smaller number).",
-    )
-
-    st.markdown("#### Current ranking table")
-    st.dataframe(df_rank_now, use_container_width=True, hide_index=True)
+        
+        # Get team at selected rank
+        if len(df_rank_now) >= selected_rank:
+            selected_team_data = df_rank_now[df_rank_now['rank'] == selected_rank].iloc[0]
+            selected_team_name = selected_team_data['team_name']
+            selected_team_id = selected_team_data['team_id']
+            selected_strength = selected_team_data['strength']
+            selected_prob = selected_team_data['prob_vs_avg']
+            
+            # Display team info card
+            st.markdown(f"### #{selected_rank}")
+            st.markdown(f"**{selected_team_name}**")
+            st.metric("Strength", f"{selected_strength:.3f}")
+            st.metric("Win Prob vs Avg", f"{selected_prob:.1%}")
+            
+            # Get team stats
+            team_stats = df_stats[df_stats['team_id'] == selected_team_id]
+            if len(team_stats) > 0:
+                team_record = team_stats.iloc[0]
+                wins = int(team_record['wins'])
+                losses = int(team_record['losses'])
+                st.caption(f"**Record:** {wins}-{losses}")
+        else:
+            st.warning("Rank not available")
+            selected_team_id = None
+    
+    with col2:
+        st.markdown("#### 🤖 AI Team Analysis")
+        
+        if selected_team_id is not None:
+            # Load AI summary
+            @st.cache_data(show_spinner="Loading AI analysis...")
+            def load_team_summary(team_id):
+                """Load LLM-generated team summary from bt.team_summaries"""
+                sql = """
+                    SELECT
+                        team_id,
+                        summary,
+                        updated_at
+                    FROM bt.team_summaries
+                    WHERE team_id = ?
+                """
+                result = run_query(sql, (int(team_id),))
+                if len(result) > 0:
+                    return result.iloc[0]
+                return None
+            
+            team_summary = load_team_summary(selected_team_id)
+            
+            if team_summary is not None:
+                # Display summary in an attractive format
+                st.markdown(f"""
+                <div style="
+                    background-color: #f0f2f6; 
+                    padding: 20px; 
+                    border-radius: 10px; 
+                    border-left: 5px solid #1f77b4;
+                    min-height: 200px;
+                ">
+                    <h4 style="margin-top: 0;">📊 {selected_team_name}</h4>
+                    <p style="font-size: 16px; line-height: 1.6;">
+                        {team_summary['summary']}
+                    </p>
+                    <p style="font-size: 12px; color: #666; margin-bottom: 0;">
+                        <em>Analysis generated: {team_summary['updated_at'].strftime('%B %d, %Y')}</em>
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Quick navigation buttons
+                st.markdown("##### 🔗 Quick Actions")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    if st.button("📋 View Full Stats", key="view_stats"):
+                        st.info(f"💡 Go to **Team Performance** section and select '{selected_team_name}' to see detailed analytics")
+                with col_b:
+                    if st.button("📈 View Trends", key="view_trends"):
+                        st.info(f"💡 Scroll down to see ranking history for '{selected_team_name}'")
+                with col_c:
+                    if st.button("⚔️ Compare", key="compare_team"):
+                        st.info(f"💡 Go to **Head-to-Head** section to compare '{selected_team_name}' with other teams")
+                
+            else:
+                st.info(f"""
+                ### No AI Analysis Available
+                
+                AI-generated analysis is not yet available for **{selected_team_name}** (Rank #{selected_rank}).
+                
+                **Why?**
+                - Analysis is only generated for Top 25 teams
+                - Data may still be processing
+                
+                **What you can do:**
+                - View detailed statistics in the **Team Performance** section
+                - Check ranking history below
+                - Compare with other teams in **Head-to-Head**
+                """)
+        else:
+            st.info("Select a rank from 1-25 to view AI-generated team analysis")
+    
+    st.markdown("---")
+    
 
 
 # ============================================================================

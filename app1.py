@@ -1018,12 +1018,14 @@ elif page == "2. Team Performance":
     # 2-1) Game Log
     # ========================================================================
     st.markdown("### 📋 Season Game Log")
-    
+
     @st.cache_data(show_spinner="Loading game log...")
     def load_team_game_log(team_id, season):
-        """Load all games for a specific team with opponent info"""
+        """Load all games for a specific team with opponent info and logos"""
+       
         team_id = int(team_id)
         season = int(season)
+        
         sql = """
             WITH team_games AS (
                 SELECT 
@@ -1061,19 +1063,20 @@ elif page == "2. Team Performance":
             )
             SELECT 
                 tg.*,
-                t.display_name AS opponent
+                t.display_name AS opponent,
+                t.logo AS opponent_logo
             FROM team_games tg
             JOIN real_deal.dim_teams AS t ON tg.opponent_id = t.id
             ORDER BY tg.start_date
         """
         df = run_query(sql, (team_id, team_id, team_id, team_id, team_id, team_id, team_id, team_id, season))
         df['result'] = df.apply(lambda row: 'W' if row['team_score'] > row['opponent_score'] else 'L', axis=1)
-        df['location'] = df['home_away'].apply(lambda x: '🏠 Home' if x == 'home' else '✈️ Away')
+        df['location'] = df['home_away'].apply(lambda x: '🏠' if x == 'home' else '✈️')
         df['margin'] = df['team_score'] - df['opponent_score']
         return df
 
     df_games = load_team_game_log(team_id, SEASON)
-    
+
     if len(df_games) > 0:
         # Game log summary
         col1, col2, col3 = st.columns(3)
@@ -1089,28 +1092,36 @@ elif page == "2. Team Performance":
         col2.metric("Home Record", f"{home_wins}-{len(home_games) - home_wins}" if len(home_games) > 0 else "0-0")
         col3.metric("Away Record", f"{away_wins}-{len(away_games) - away_wins}" if len(away_games) > 0 else "0-0")
         
-        # Display game log table
+        # Display game log table with logos
         st.dataframe(
             df_games[[
                 'week', 'start_date', 'result', 'location', 
-                'opponent', 'team_score', 'opponent_score', 'margin', 'team_yards', 'team_turnovers'
-            ]].rename(columns={
+                'opponent_logo', 'opponent', 'team_score', 'opponent_score', 'team_yards', 'team_turnovers'
+            ]].rename(columns={             
                 'week': 'Week',
                 'start_date': 'Date',
                 'result': 'W/L',
-                'location': 'Location',
+                'location': 'Loc',
+                'opponent_logo': 'Opponent Logo',
                 'opponent': 'Opponent',
                 'team_score': 'Pts',
                 'opponent_score': 'Opp Pts',
-                'margin': 'Margin',
                 'team_yards': 'Yards',
-                'team_turnovers': 'Turnovers',
+                'team_turnovers': 'TO'
             }),
             use_container_width=True,
             hide_index=True,
             column_config={
+                "": st.column_config.ImageColumn(
+                    width="small"  # small, medium, large
+                ),
                 "Date": st.column_config.DateColumn(format="MMM DD, YYYY"),
-                "Margin": st.column_config.NumberColumn(format="%+d"),
+                "W/L": st.column_config.TextColumn(
+                    help="W = Win, L = Loss"
+                ),
+                "Loc": st.column_config.TextColumn(
+                    help="🏠 = Home, ✈️ = Away"
+                ),
             }
         )
     else:

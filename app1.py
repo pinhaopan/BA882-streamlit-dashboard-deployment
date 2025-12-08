@@ -1101,12 +1101,16 @@ elif page == "6. Text to SQL":
                         chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter"], key="text2sql_chart")
 
                         try:
+                            df_plot = df.copy()
+                            if df_plot[x_col].dtype.kind in "if" and "week" in x_col.lower():
+                                df_plot[x_col] = df_plot[x_col].round().astype(int)
+
                             if chart_type == "Bar":
-                                fig = px.bar(df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                                fig = px.bar(df_plot, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                             elif chart_type == "Line":
-                                fig = px.line(df, x=x_col, y=y_col, title=f"{y_col} over {x_col}")
+                                fig = px.line(df_plot, x=x_col, y=y_col, title=f"{y_col} over {x_col}", markers=True)
                             else:
-                                fig = px.scatter(df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                                fig = px.scatter(df_plot, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
                             st.plotly_chart(fig, use_container_width=True)
                         except Exception as e:  # noqa: BLE001
                             st.warning(f"Unable to render chart: {e}")
@@ -1144,12 +1148,16 @@ elif page == "6. Text to SQL":
             chart_type = st.selectbox("Chart type", ["Bar", "Line", "Scatter"], index=["Bar","Line","Scatter"].index(chart_val) if chart_val in ["Bar","Line","Scatter"] else 0, key="text2sql_chart")
 
             try:
+                df_plot = last_df.copy()
+                if df_plot[x_col].dtype.kind in "if" and "week" in x_col.lower():
+                    df_plot[x_col] = df_plot[x_col].round().astype(int)
+
                 if chart_type == "Bar":
-                    fig = px.bar(last_df, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                    fig = px.bar(df_plot, x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                 elif chart_type == "Line":
-                    fig = px.line(last_df, x=x_col, y=y_col, title=f"{y_col} over {x_col}")
+                    fig = px.line(df_plot, x=x_col, y=y_col, title=f"{y_col} over {x_col}", markers=True)
                 else:
-                    fig = px.scatter(last_df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                    fig = px.scatter(df_plot, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
                 st.plotly_chart(fig, use_container_width=True)
             except Exception as e:  # noqa: BLE001
                 st.warning(f"Unable to render chart: {e}")

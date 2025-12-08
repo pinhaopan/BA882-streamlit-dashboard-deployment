@@ -1134,11 +1134,45 @@ elif page == "2. Team Performance":
     # ========================================================================
     st.markdown("### 📌 Key Performance Indicators")
 
+    # Get Bradley-Terry Ranking
+    @st.cache_data
+    def get_bt_ranking(team_id):
+        """Get Bradley-Terry ranking for a team"""
+        sql = """
+            SELECT 
+                rank,
+                strength,
+                prob_vs_avg
+            FROM bt.rankings
+            WHERE team_id = ?
+        """
+        result = run_query(sql, (int(team_id),))
+        if len(result) > 0:
+            return result.iloc[0]
+        return None
+
+    bt_rank = get_bt_ranking(team_id)
+
+    # 5 Columns KPI Cards
     kpi_cols = ["win_pct", "avg_points_scored", "avg_points_allowed", "point_differential"]
     kpi_display = [metric_label(c) for c in kpi_cols]
 
-    cols = st.columns(len(kpi_cols))
-    for c, label, col_container in zip(kpi_cols, kpi_display, cols):
+    cols = st.columns(5)
+
+    # First Column: Bradley-Terry Ranking
+    if bt_rank is not None:
+        cols[0].metric(
+            label="BT Ranking",
+            value=f"#{int(bt_rank['rank'])}",
+            delta=f"Strength: {bt_rank['strength']:.3f}",
+            help=f"Bradley-Terry model ranking. Win probability vs average team: {bt_rank['prob_vs_avg']:.1%}"
+        )
+        cols[0].caption(f"💪 {bt_rank['prob_vs_avg']:.1%} vs avg team")
+    else:
+        cols[0].metric("BT Ranking", "N/A")
+
+    # KPIs
+    for i, (c, label) in enumerate(zip(kpi_cols, kpi_display), start=1):
         val = float(team_row[c])
         med = float(benchmark[c])
         delta_pct = (val - med) / med if med != 0 else 0.0
@@ -1149,13 +1183,13 @@ elif page == "2. Team Performance":
         else:
             rank = (df_stats[c] < val).sum() + 1
         
-        col_container.metric(
+        cols[i].metric(
             label=f"{label}",
             value=f"{val:.3f}" if c == "win_pct" else f"{val:.1f}",
             delta=f"{delta_pct:+.1%} vs median",
             help=f"Rank: #{rank} out of {len(df_stats)} teams"
         )
-        col_container.caption(f"📊 Rank: #{rank}/{len(df_stats)}")
+        cols[i].caption(f"📊 Rank: #{rank}/{len(df_stats)}")
 
     st.markdown("---")
 

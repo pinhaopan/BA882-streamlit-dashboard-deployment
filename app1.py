@@ -2116,6 +2116,86 @@ elif page == "3. Ranking Evolution":
     
     st.markdown("---")
     
+     # ========================================================================
+    # 3-3) Individual Team Ranking History
+    # ========================================================================
+    st.markdown("### 📈 Individual Team Ranking History")
+    
+    df_hist = run_query(
+        """
+        SELECT
+            h.team_id,
+            COALESCE(t.display_name, t.name) AS team_name,
+            h.rank,
+            h.strength,
+            h.prob_vs_avg,
+            h.updated_at
+        FROM bt.model_ranking_history AS h
+        LEFT JOIN real_deal.dim_teams AS t
+            ON h.team_id = t.id
+        ORDER BY h.updated_at
+        """
+    )
+
+    if df_hist.empty:
+        st.warning("The table bt.model_ranking_history is currently empty.")
+    else:
+        team_options = df_hist["team_name"].dropna().unique().tolist()
+        
+        # Default to the team selected in rank selector if available
+        default_team = selected_team_name if selected_team_id is not None else team_options[0]
+        default_index = team_options.index(default_team) if default_team in team_options else 0
+        
+        selected_team_history = st.selectbox(
+            "Select a team to view ranking history", 
+            sorted(team_options),
+            index=default_index,
+            key="history_team_select"
+        )
+
+        df_team = df_hist[df_hist["team_name"] == selected_team_history].sort_values("updated_at")
+
+        c1, c2 = st.columns(2)
+
+        # Rank over time
+        rank_fig = px.line(
+            df_team,
+            x="updated_at",
+            y="rank",
+            title=f"{selected_team_history} – Rank over time (lower is better)",
+            markers=True
+        )
+        rank_fig.update_yaxes(autorange="reversed")
+        rank_fig.update_layout(hovermode='x unified')
+        c1.plotly_chart(rank_fig, use_container_width=True)
+
+        # Strength over time
+        strength_fig = px.line(
+            df_team,
+            x="updated_at",
+            y="strength",
+            title=f"{selected_team_history} – Strength over time",
+            markers=True
+        )
+        strength_fig.update_layout(hovermode='x unified')
+        c2.plotly_chart(strength_fig, use_container_width=True)
+        
+        # Summary statistics
+        if len(df_team) > 1:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            best_rank = df_team['rank'].min()
+            worst_rank = df_team['rank'].max()
+            current_rank = df_team.iloc[-1]['rank']
+            rank_change = df_team.iloc[0]['rank'] - current_rank
+            
+            col1.metric("Current Rank", f"#{int(current_rank)}")
+            col2.metric("Best Rank", f"#{int(best_rank)}")
+            col3.metric("Worst Rank", f"#{int(worst_rank)}")
+            col4.metric("Season Change", f"{int(rank_change):+d}", 
+                       delta_color="normal" if rank_change > 0 else "inverse")
+
+        st.markdown("---")
 
 
 # ============================================================================

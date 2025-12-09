@@ -435,7 +435,7 @@ page = st.sidebar.radio(
         "2. Team Performance",
         "3. Ranking Evolution",
         "4. Head-to-Head",
-        "5. League Analytics",
+        #"5. League Analytics",
     ],
 )
 

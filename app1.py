@@ -2796,7 +2796,7 @@ elif page == "4. Head-to-Head":
     )
     col_diff.plotly_chart(fig_diff, use_container_width=True)
 
-
+"""
 # ============================================================================
 # 5. League Analytics
 # ============================================================================
@@ -2941,3 +2941,4 @@ elif page == "5. League Analytics":
                 title=f"Clusters by {metric_label(x_metric)} & {metric_label(y_metric)}",
             )
             st.plotly_chart(fig_cluster, use_container_width=True)
+"""

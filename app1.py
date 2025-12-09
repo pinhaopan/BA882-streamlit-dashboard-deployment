@@ -1931,7 +1931,7 @@ elif page == "3. Ranking Evolution":
                 FROM real_deal.fact_rankings
                 WHERE season_year = ?
                     AND week_number = ?
-                    AND poll_name = 'AP Top 25'
+                    AND poll_name = 'AP Poll'
                 ORDER BY current_rank
             """
             df_ap = run_query(ap_sql, (season, latest_week))
@@ -2039,7 +2039,7 @@ elif page == "3. Ranking Evolution":
             if selected_logo and pd.notna(selected_logo):
                 st.markdown(f"""
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <img src="{selected_logo}" width="40" height="40" style="border-radius: 5px;">
+                    <img src="{selected_logo}" width="30" height="30" style="border-radius: 5px;">
                     <span style="font-size: 20px; font-weight: bold;">{selected_team_name}</span>
                 </div>
                 """, unsafe_allow_html=True)

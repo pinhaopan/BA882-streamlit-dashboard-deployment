@@ -1966,7 +1966,7 @@ elif page == "3. Ranking Evolution":
                         r.updated_at
                     FROM bt.team_summaries AS ts
                     LEFT JOIN bt.rankings AS r ON ts.team_id = r.team_id
-                    WHERE team_id = ?
+                    WHERE ts.team_id = ?
                 """
                 result = run_query(sql, (int(team_id),))
                 if len(result) > 0:

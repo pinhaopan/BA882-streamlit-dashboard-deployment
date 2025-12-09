@@ -7,3 +7,4 @@ plotly
 scikit-learn
 statsmodels
 duckdb==1.3.2
+requests

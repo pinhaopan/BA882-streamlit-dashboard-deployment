@@ -2026,10 +2026,10 @@ elif page == "3. Ranking Evolution":
         
         # Get team at selected rank
         if len(df_all_rankings) >= selected_rank:
-            selected_team_data = df_all_rankings[df_all_rankings['rank'] == selected_rank].iloc[0]
+            selected_team_data = df_all_rankings[df_all_rankings['bt_rank'] == selected_rank].iloc[0]
             selected_team_name = selected_team_data['team_name']
             selected_team_id = selected_team_data['team_id']
-            selected_strength = selected_team_data['strength']
+            selected_strength = selected_team_data['bt_strength']
             selected_prob = selected_team_data['prob_vs_avg']
             selected_logo = selected_team_data.get('logo', None)
             

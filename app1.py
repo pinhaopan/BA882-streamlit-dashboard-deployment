@@ -1886,25 +1886,123 @@ elif page == "3. Ranking Evolution":
     and read AI-generated team analyses.
     """)
 
-    with st.spinner("Loading rankings & team stats..."):
-        # Load Bradley-Terry rankings
-        df_rank_now = run_query(
-            """
+    @st.cache_data(show_spinner="Loading all rankings...")
+    def load_all_rankings_data(season):
+        """
+        Load Bradley-Terry, AP Poll, and Coaches Poll rankings
+        """
+        # 1. Bradley-Terry (current)
+        bt_sql = """
             SELECT
                 r.team_id,
                 COALESCE(t.display_name, t.name) AS team_name,
-                r.rank,
-                r.strength,
+                t.logo,
+                r.rank AS bt_rank,
+                r.strength AS bt_strength,
                 r.prob_vs_avg
             FROM bt.rankings AS r
-            LEFT JOIN real_deal.dim_teams AS t
-                ON r.team_id = t.id
+            LEFT JOIN real_deal.dim_teams AS t ON r.team_id = t.id
             ORDER BY r.rank
-            """
-        )
+        """
+        df_bt = run_query(bt_sql)
         
-        # Load team stats for additional context
+        # 2. Get latest week for polls
+        week_sql = """
+            SELECT MAX(week_number) as latest_week
+            FROM real_deal.fact_rankings
+            WHERE season_year = ?
+        """
+        week_result = run_query(week_sql, (season,))
+        latest_week = int(week_result.iloc[0]['latest_week']) if len(week_result) > 0 and pd.notna(week_result.iloc[0]['latest_week']) else None
+        
+        df_ap = pd.DataFrame()
+        df_coaches = pd.DataFrame()
+        
+        if latest_week is not None:
+            # 3. AP Poll
+            ap_sql = """
+                SELECT
+                    team_id,
+                    team AS team_name,
+                    current_rank AS ap_rank,
+                    previous_rank AS ap_prev_rank,
+                    points AS ap_points,
+                    firstPlaceVotes AS ap_first_place_votes
+                FROM real_deal.fact_rankings
+                WHERE season_year = ?
+                    AND week_number = ?
+                    AND poll_name = 'AP Top 25'
+                ORDER BY current_rank
+            """
+            df_ap = run_query(ap_sql, (season, latest_week))
+            
+            # 4. Coaches Poll
+            coaches_sql = """
+                SELECT
+                    team_id,
+                    team AS team_name,
+                    current_rank AS coaches_rank,
+                    previous_rank AS coaches_prev_rank,
+                    points AS coaches_points,
+                    firstPlaceVotes AS coaches_first_place_votes
+                FROM real_deal.fact_rankings
+                WHERE season_year = ?
+                    AND week_number = ?
+                    AND poll_name = 'AFCA Coaches Poll'
+                ORDER BY current_rank
+            """
+            df_coaches = run_query(coaches_sql, (season, latest_week))
+        
+        # 5. Merge all rankings
+        if not df_ap.empty:
+            df_merged = df_bt.merge(df_ap[['team_id', 'ap_rank', 'ap_prev_rank', 'ap_points', 'ap_first_place_votes']], 
+                                    on='team_id', how='outer')
+        else:
+            df_merged = df_bt.copy()
+            df_merged['ap_rank'] = None
+            df_merged['ap_prev_rank'] = None
+            df_merged['ap_points'] = None
+            df_merged['ap_first_place_votes'] = None
+        
+        if not df_coaches.empty:
+            df_merged = df_merged.merge(df_coaches[['team_id', 'coaches_rank', 'coaches_prev_rank', 'coaches_points', 'coaches_first_place_votes']], 
+                                       on='team_id', how='outer')
+        else:
+            df_merged['coaches_rank'] = None
+            df_merged['coaches_prev_rank'] = None
+            df_merged['coaches_points'] = None
+            df_merged['coaches_first_place_votes'] = None
+        
+        # Calculate consensus rank (average of available rankings)
+        rank_cols = ['bt_rank', 'ap_rank', 'coaches_rank']
+        df_merged['avg_rank'] = df_merged[rank_cols].mean(axis=1, skipna=True)
+        df_merged['num_polls_ranked'] = df_merged[rank_cols].notna().sum(axis=1)
+        
+        return df_merged, latest_week
+    
+    @st.cache_data(show_spinner="Loading team summary...")
+    def load_team_summary(team_id):
+        """Load LLM-generated team summary from bt.team_summaries"""
+        sql = """
+            SELECT
+                team_id,
+                summary,
+                updated_at
+            FROM bt.team_summaries
+            WHERE team_id = ?
+        """
+        result = run_query(sql, (int(team_id),))
+        if len(result) > 0:
+            return result.iloc[0]
+        return None
+    
+    with st.spinner("Loading rankings & team stats..."):
+        df_all_rankings, latest_week = load_all_rankings_data(SEASON)
         df_stats, benchmark = load_team_stats_with_benchmark()
+
+    # Check if polls data is available
+    has_ap = df_all_rankings['ap_rank'].notna().any()
+    has_coaches = df_all_rankings['coaches_rank'].notna().any()
 
     # ========================================================================
     # 3-1) Current Rankings Dashboard with AI Summaries
@@ -1933,10 +2031,20 @@ elif page == "3. Ranking Evolution":
             selected_team_id = selected_team_data['team_id']
             selected_strength = selected_team_data['strength']
             selected_prob = selected_team_data['prob_vs_avg']
+            selected_logo = selected_team_data.get('logo', None)
             
             # Display team info card
             st.markdown(f"### #{selected_rank}")
-            st.markdown(f"**{selected_team_name}**")
+            # Team name with logo
+            if selected_logo and pd.notna(selected_logo):
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="{selected_logo}" width="40" height="40" style="border-radius: 5px;">
+                    <span style="font-size: 20px; font-weight: bold;">{selected_team_name}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"**{selected_team_name}**")
             st.metric("Strength", f"{selected_strength:.3f}")
             st.metric("Win Prob vs Avg", f"{selected_prob:.1%}")
             
@@ -2030,89 +2138,382 @@ elif page == "3. Ranking Evolution":
     st.markdown("---")
     
     # ========================================================================
-    # 3-2) Top 25 Rankings Table
+    # 3-2) Top 25 Rankings Tables (4 Tabs)
     # ========================================================================
-    st.markdown("### 📊 Top 25 Teams - Bradley-Terry Rankings")
+    st.markdown("### 📊 Top 25 Rankings")
     
-    # Merge with team stats for context
-    df_top25 = df_rank_now.head(25).copy()
-    df_top25 = df_top25.merge(
-        df_stats[['team_id', 'wins', 'losses', 'win_pct', 'point_differential', 'avg_points_scored', 'avg_points_allowed']], 
-        on='team_id', 
-        how='left'
-    )
+    # Create tabs
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔵 Bradley-Terry", 
+        "🔴 AP Poll", 
+        "🟢 Coaches Poll", 
+        "🏆 Combined Rankings"
+    ])
     
-    # Create display dataframe
-    display_df = df_top25[[
-        'rank', 'team_name', 'strength', 'wins', 'losses', 'win_pct', 
-        'point_differential', 'avg_points_scored', 'avg_points_allowed'
-    ]].copy()
-    
-    # Add AI summary indicator
+    # Helper function to get teams with AI summaries
     @st.cache_data
     def get_teams_with_summaries():
-        """Get list of team_ids that have AI summaries"""
         sql = "SELECT DISTINCT team_id FROM bt.team_summaries"
         result = run_query(sql)
         return set(result['team_id'].tolist())
     
     teams_with_ai = get_teams_with_summaries()
-    display_df['AI Analysis'] = display_df.apply(
-        lambda row: "✅" if df_top25[df_top25['rank'] == row['rank']].iloc[0]['team_id'] in teams_with_ai else "—",
-        axis=1
-    )
     
-    st.dataframe(
-        display_df.rename(columns={
-            'rank': 'Rank',
-            'team_name': 'Team',
-            'strength': 'B-T Strength',
-            'wins': 'W',
-            'losses': 'L',
-            'win_pct': 'Win %',
-            'point_differential': 'Pt Diff',
-            'avg_points_scored': 'Avg Pts',
-            'avg_points_allowed': 'Avg PA'
-        }),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Rank": st.column_config.NumberColumn(format="%d"),
-            "B-T Strength": st.column_config.NumberColumn(format="%.3f"),
-            "W": st.column_config.NumberColumn(format="%d"),
-            "L": st.column_config.NumberColumn(format="%d"),
-            "Win %": st.column_config.NumberColumn(format="%.3f"),
-            "Pt Diff": st.column_config.NumberColumn(format="%+.1f"),
-            "Avg Pts": st.column_config.NumberColumn(format="%.1f"),
-            "Avg PA": st.column_config.NumberColumn(format="%.1f"),
-        },
-        height=600
-    )
+    # ====================================================================
+    # TAB 1: Bradley-Terry Rankings (Original)
+    # ====================================================================
+    with tab1:
+        st.markdown("#### Top 25 Teams - Bradley-Terry Rankings")
+        st.caption("Statistical model based on game results and strength of schedule")
+        
+        # Get top 25 by Bradley-Terry
+        df_bt_top25 = df_all_rankings[df_all_rankings['bt_rank'].notna()].sort_values('bt_rank').head(25).copy()
+        
+        # Merge with team stats
+        df_bt_top25 = df_bt_top25.merge(
+            df_stats[['team_id', 'wins', 'losses', 'win_pct', 'point_differential', 'avg_points_scored', 'avg_points_allowed']], 
+            on='team_id', 
+            how='left'
+        )
+        
+        # Add AI summary indicator
+        df_bt_top25['has_ai'] = df_bt_top25['team_id'].isin(teams_with_ai)
+        
+        # Create display dataframe
+        display_df = df_bt_top25[[
+            'bt_rank', 'team_name', 'bt_strength', 'wins', 'losses', 'win_pct', 
+            'point_differential', 'avg_points_scored', 'avg_points_allowed', 'has_ai'
+        ]].copy()
+        
+        st.dataframe(
+            display_df.rename(columns={
+                'bt_rank': 'Rank',
+                'team_name': 'Team',
+                'bt_strength': 'B-T Strength',
+                'wins': 'W',
+                'losses': 'L',
+                'win_pct': 'Win %',
+                'point_differential': 'Pt Diff',
+                'avg_points_scored': 'Avg Pts',
+                'avg_points_allowed': 'Avg PA',
+                'has_ai': 'AI'
+            }),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Rank": st.column_config.NumberColumn(format="%d"),
+                "B-T Strength": st.column_config.NumberColumn(format="%.3f"),
+                "W": st.column_config.NumberColumn(format="%d"),
+                "L": st.column_config.NumberColumn(format="%d"),
+                "Win %": st.column_config.NumberColumn(format="%.3f"),
+                "Pt Diff": st.column_config.NumberColumn(format="%+.1f"),
+                "Avg Pts": st.column_config.NumberColumn(format="%.1f"),
+                "Avg PA": st.column_config.NumberColumn(format="%.1f"),
+                "AI": st.column_config.CheckboxColumn("AI Analysis"),
+            },
+            height=600
+        )
+        
+        st.caption("✅ = AI analysis available | Select rank above to read analysis")
+        
+        # Show expandable full rankings
+        with st.expander("📋 View Full Rankings (All Teams)"):
+            df_all_bt = df_all_rankings[df_all_rankings['bt_rank'].notna()].sort_values('bt_rank')
+            df_all_bt = df_all_bt.merge(
+                df_stats[['team_id', 'wins', 'losses', 'win_pct']], 
+                on='team_id', 
+                how='left'
+            )
+            
+            st.dataframe(
+                df_all_bt[['bt_rank', 'team_name', 'bt_strength', 'prob_vs_avg', 'wins', 'losses', 'win_pct']].rename(columns={
+                    'bt_rank': 'Rank',
+                    'team_name': 'Team',
+                    'bt_strength': 'Strength',
+                    'prob_vs_avg': 'Win % vs Avg',
+                    'wins': 'W',
+                    'losses': 'L',
+                    'win_pct': 'Win %'
+                }),
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
     
-    st.caption("✅ = AI analysis available | Click a rank in the selector above to read the analysis")
+    # ====================================================================
+    # TAB 2: AP Poll
+    # ====================================================================
+    with tab2:
+        if has_ap:
+            st.markdown("#### AP Top 25 (Associated Press Poll)")
+            st.caption(f"Week {latest_week} rankings voted by sports writers and broadcasters")
+            
+            df_ap_display = df_all_rankings[df_all_rankings['ap_rank'].notna()].sort_values('ap_rank').head(25).copy()
+            df_ap_display = df_ap_display.merge(
+                df_stats[['team_id', 'wins', 'losses', 'win_pct']], 
+                on='team_id', 
+                how='left'
+            )
+            
+            # Calculate rank change
+            df_ap_display['ap_change'] = df_ap_display.apply(
+                lambda row: int(row['ap_prev_rank'] - row['ap_rank']) if pd.notna(row['ap_prev_rank']) else 0,
+                axis=1
+            )
+            
+            # Add comparison with B-T
+            df_ap_display['bt_diff'] = df_ap_display.apply(
+                lambda row: int(row['bt_rank'] - row['ap_rank']) if pd.notna(row['bt_rank']) else None,
+                axis=1
+            )
+            
+            st.dataframe(
+                df_ap_display[['ap_rank', 'team_name', 'ap_points', 'ap_first_place_votes', 
+                              'ap_change', 'bt_rank', 'bt_diff', 'wins', 'losses', 'win_pct']].rename(columns={
+                    'ap_rank': 'AP Rank',
+                    'team_name': 'Team',
+                    'ap_points': 'Points',
+                    'ap_first_place_votes': '#1 Votes',
+                    'ap_change': 'Δ',
+                    'bt_rank': 'B-T Rank',
+                    'bt_diff': 'vs B-T',
+                    'wins': 'W',
+                    'losses': 'L',
+                    'win_pct': 'Win %'
+                }),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "AP Rank": st.column_config.NumberColumn(format="%d"),
+                    "Points": st.column_config.NumberColumn(format="%d"),
+                    "#1 Votes": st.column_config.NumberColumn(format="%d"),
+                    "Δ": st.column_config.NumberColumn(format="%+d", help="Change from last week"),
+                    "B-T Rank": st.column_config.NumberColumn(format="%d"),
+                    "vs B-T": st.column_config.NumberColumn(format="%+d", help="Difference: B-T rank - AP rank (negative = ranked higher in B-T)"),
+                    "W": st.column_config.NumberColumn(format="%d"),
+                    "L": st.column_config.NumberColumn(format="%d"),
+                    "Win %": st.column_config.NumberColumn(format="%.3f"),
+                },
+                height=600
+            )
+            
+            st.caption("Δ = Change from last week | vs B-T = Difference from Bradley-Terry ranking")
+            
+            with st.expander("📚 About AP Poll"):
+                st.markdown("""
+                ### 📰 Associated Press Top 25 Poll
+                
+                **What it is:**
+                - Voted by panel of 62 sports writers and broadcasters
+                - Published weekly during the season
+                - One of the most prestigious college football rankings
+                
+                **How voting works:**
+                - Each voter ranks their top 25 teams
+                - 1st place = 25 points, 2nd = 24 points, ..., 25th = 1 point
+                - Total points determine final rankings
+                - First-place votes indicate how many voters ranked a team #1
+                
+                **Strengths:**
+                - Diverse perspectives from national media
+                - Considers "eye test" and quality of play
+                - Quick to react to big wins/losses
+                
+                **Limitations:**
+                - Subject to voter bias and regional preferences
+                - Voters may not watch every game
+                - Hype and brand names can influence votes
+                - Historical success can create inertia in rankings
+                """)
+        else:
+            st.info("AP Poll data not available for current season")
     
-    # Show expandable full rankings
-    with st.expander("📋 View Full Rankings (All Teams)"):
-        df_all_display = df_rank_now.merge(
+    # ====================================================================
+    # TAB 3: Coaches Poll
+    # ====================================================================
+    with tab3:
+        if has_coaches:
+            st.markdown("#### Coaches Top 25 (AFCA Coaches Poll)")
+            st.caption(f"Week {latest_week} rankings voted by FBS head coaches")
+            
+            df_coaches_display = df_all_rankings[df_all_rankings['coaches_rank'].notna()].sort_values('coaches_rank').head(25).copy()
+            df_coaches_display = df_coaches_display.merge(
+                df_stats[['team_id', 'wins', 'losses', 'win_pct']], 
+                on='team_id', 
+                how='left'
+            )
+            
+            # Calculate rank change
+            df_coaches_display['coaches_change'] = df_coaches_display.apply(
+                lambda row: int(row['coaches_prev_rank'] - row['coaches_rank']) if pd.notna(row['coaches_prev_rank']) else 0,
+                axis=1
+            )
+            
+            # Add comparison with B-T
+            df_coaches_display['bt_diff'] = df_coaches_display.apply(
+                lambda row: int(row['bt_rank'] - row['coaches_rank']) if pd.notna(row['bt_rank']) else None,
+                axis=1
+            )
+            
+            st.dataframe(
+                df_coaches_display[['coaches_rank', 'team_name', 'coaches_points', 'coaches_first_place_votes', 
+                                   'coaches_change', 'bt_rank', 'bt_diff', 'wins', 'losses', 'win_pct']].rename(columns={
+                    'coaches_rank': 'Coaches Rank',
+                    'team_name': 'Team',
+                    'coaches_points': 'Points',
+                    'coaches_first_place_votes': '#1 Votes',
+                    'coaches_change': 'Δ',
+                    'bt_rank': 'B-T Rank',
+                    'bt_diff': 'vs B-T',
+                    'wins': 'W',
+                    'losses': 'L',
+                    'win_pct': 'Win %'
+                }),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Coaches Rank": st.column_config.NumberColumn(format="%d"),
+                    "Points": st.column_config.NumberColumn(format="%d"),
+                    "#1 Votes": st.column_config.NumberColumn(format="%d"),
+                    "Δ": st.column_config.NumberColumn(format="%+d", help="Change from last week"),
+                    "B-T Rank": st.column_config.NumberColumn(format="%d"),
+                    "vs B-T": st.column_config.NumberColumn(format="%+d", help="Difference: B-T rank - Coaches rank (negative = ranked higher in B-T)"),
+                    "W": st.column_config.NumberColumn(format="%d"),
+                    "L": st.column_config.NumberColumn(format="%d"),
+                    "Win %": st.column_config.NumberColumn(format="%.3f"),
+                },
+                height=600
+            )
+            
+            st.caption("Δ = Change from last week | vs B-T = Difference from Bradley-Terry ranking")
+            
+            with st.expander("📚 About Coaches Poll"):
+                st.markdown("""
+                ### 🎓 AFCA Coaches Poll
+                
+                **What it is:**
+                - Voted by panel of FBS head coaches
+                - Administered by American Football Coaches Association (AFCA)
+                - One of the "major" polls alongside AP Poll
+                
+                **How voting works:**
+                - Similar point system to AP Poll
+                - 1st place = 25 points, descending to 1 point for 25th
+                - Coaches cannot vote for their own team
+                
+                **Strengths:**
+                - Expert opinion from people who study film and game-plan
+                - Deep understanding of X's and O's
+                - Insider knowledge of team strengths/weaknesses
+                
+                **Limitations:**
+                - Coaches have limited time to watch other games
+                - May vote strategically (helping/hurting rivals, conference)
+                - Potential conflicts of interest
+                - Often closely mirrors AP Poll
+                """)
+        else:
+            st.info("Coaches Poll data not available for current season")
+    
+    # ====================================================================
+    # TAB 4: Combined Rankings
+    # ====================================================================
+    with tab4:
+        st.markdown("#### Combined Rankings (All Three Systems)")
+        st.caption("Teams ranked in top 25 by ANY system")
+        
+        # Get teams ranked in top 25 by ANY system
+        df_combined = df_all_rankings[
+            (df_all_rankings['bt_rank'] <= 25) | 
+            (df_all_rankings['ap_rank'] <= 25) | 
+            (df_all_rankings['coaches_rank'] <= 25)
+        ].copy()
+        
+        # Sort by average rank
+        df_combined = df_combined.sort_values('avg_rank')
+        
+        # Merge with team stats
+        df_combined = df_combined.merge(
             df_stats[['team_id', 'wins', 'losses', 'win_pct']], 
             on='team_id', 
             how='left'
         )
         
+        # Add AI indicator
+        df_combined['has_ai'] = df_combined['team_id'].isin(teams_with_ai)
+        
+        # Calculate rank spread
+        df_combined['rank_spread'] = df_combined.apply(
+            lambda row: (
+                max([x for x in [row['bt_rank'], row['ap_rank'], row['coaches_rank']] if pd.notna(x)]) -
+                min([x for x in [row['bt_rank'], row['ap_rank'], row['coaches_rank']] if pd.notna(x)])
+            ) if row['num_polls_ranked'] >= 2 else 0,
+            axis=1
+        )
+        
         st.dataframe(
-            df_all_display[['rank', 'team_name', 'strength', 'prob_vs_avg', 'wins', 'losses', 'win_pct']].rename(columns={
-                'rank': 'Rank',
+            df_combined[['avg_rank', 'team_name', 'bt_rank', 'ap_rank', 'coaches_rank', 'rank_spread',
+                        'wins', 'losses', 'win_pct', 'has_ai']].rename(columns={
+                'avg_rank': 'Avg Rank',
                 'team_name': 'Team',
-                'strength': 'Strength',
-                'prob_vs_avg': 'Win % vs Avg',
+                'bt_rank': 'B-T',
+                'ap_rank': 'AP',
+                'coaches_rank': 'Coaches',
+                'rank_spread': 'Spread',
                 'wins': 'W',
                 'losses': 'L',
-                'win_pct': 'Win %'
+                'win_pct': 'Win %',
+                'has_ai': 'AI'
             }),
             use_container_width=True,
             hide_index=True,
-            height=400
+            column_config={
+                "Avg Rank": st.column_config.NumberColumn(format="%.1f"),
+                "B-T": st.column_config.NumberColumn(format="%d"),
+                "AP": st.column_config.NumberColumn(format="%d"),
+                "Coaches": st.column_config.NumberColumn(format="%d"),
+                "Spread": st.column_config.NumberColumn(format="%d", help="Difference between highest and lowest rank"),
+                "W": st.column_config.NumberColumn(format="%d"),
+                "L": st.column_config.NumberColumn(format="%d"),
+                "Win %": st.column_config.NumberColumn(format="%.3f"),
+                "AI": st.column_config.CheckboxColumn("AI Analysis"),
+            },
+            height=600
         )
+        
+        st.caption("Spread = Difference between highest and lowest rank across all systems | NaN = Not ranked in that system")
+        
+        # Insights
+        st.markdown("#### 🔍 Key Insights")
+        col1, col2, col3 = st.columns(3)
+        
+        consensus_teams = len(df_combined[df_combined['num_polls_ranked'] == 3])
+        col1.metric("Consensus Top 25", f"{consensus_teams} teams", help="Teams ranked in all three systems")
+        
+        # Most controversial team
+        most_controversial = df_combined.nlargest(1, 'rank_spread').iloc[0] if len(df_combined) > 0 and df_combined['rank_spread'].max() > 0 else None
+        if most_controversial is not None:
+            col2.metric(
+                "Most Controversial",
+                most_controversial['team_name'],
+                f"±{int(most_controversial['rank_spread'])} rank spread",
+                help="Biggest difference between rankings across systems"
+            )
+        
+        # Biggest overperformer in polls vs B-T
+        if has_ap:
+            df_combined['poll_overperform'] = df_combined.apply(
+                lambda row: (row['bt_rank'] - row['ap_rank']) if pd.notna(row['bt_rank']) and pd.notna(row['ap_rank']) else 0,
+                axis=1
+            )
+            biggest_overperform = df_combined.nlargest(1, 'poll_overperform').iloc[0] if df_combined['poll_overperform'].max() > 0 else None
+            if biggest_overperform is not None:
+                col3.metric(
+                    "Poll Overperformer",
+                    biggest_overperform['team_name'],
+                    f"+{int(biggest_overperform['poll_overperform'])} spots",
+                    help="Ranked much higher in polls than Bradley-Terry suggests"
+                )
     
     st.markdown("---")
 

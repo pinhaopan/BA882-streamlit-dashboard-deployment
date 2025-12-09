@@ -2796,149 +2796,148 @@ elif page == "4. Head-to-Head":
     )
     col_diff.plotly_chart(fig_diff, use_container_width=True)
 
-"""
-# ============================================================================
-# 5. League Analytics
-# ============================================================================
-elif page == "5. League Analytics":
-    st.subheader("📚 League-wide Analytics – Distribution, Correlation, Clusters")
 
-    with st.spinner("Loading league stats..."):
-        df_stats, benchmark = load_team_stats_with_benchmark()
+# # ============================================================================
+# # 5. League Analytics
+# # ============================================================================
+# elif page == "5. League Analytics":
+#     st.subheader("📚 League-wide Analytics – Distribution, Correlation, Clusters")
 
-    tab1, tab2, tab3 = st.tabs(["Distribution", "Correlation", "Clustering"])
+#     with st.spinner("Loading league stats..."):
+#         df_stats, benchmark = load_team_stats_with_benchmark()
 
-    # -------------------------------
-    # Tab 1 – Distribution
-    # -------------------------------
-    with tab1:
-        st.markdown("### 📈 Metric Distribution")
+#     tab1, tab2, tab3 = st.tabs(["Distribution", "Correlation", "Clustering"])
 
-        metric_for_dist = st.selectbox(
-            "Choose a metric:",
-            TEAM_METRICS,
-            index=TEAM_METRICS.index("win_pct"),
-            format_func=metric_label,
-            key="league_dist_metric",
-        )
+#     # -------------------------------
+#     # Tab 1 – Distribution
+#     # -------------------------------
+#     with tab1:
+#         st.markdown("### 📈 Metric Distribution")
 
-        col1, col2 = st.columns(2)
+#         metric_for_dist = st.selectbox(
+#             "Choose a metric:",
+#             TEAM_METRICS,
+#             index=TEAM_METRICS.index("win_pct"),
+#             format_func=metric_label,
+#             key="league_dist_metric",
+#         )
 
-        fig_hist = px.histogram(
-            df_stats,
-            x=metric_for_dist,
-            nbins=20,
-            title=f"{metric_label(metric_for_dist)} – Histogram",
-        )
-        fig_hist.add_vline(
-            x=benchmark[metric_for_dist],
-            line_dash="dash",
-            annotation_text="Median",
-            annotation_position="top left",
-        )
-        col1.plotly_chart(fig_hist, use_container_width=True)
+#         col1, col2 = st.columns(2)
 
-        fig_box = px.box(
-            df_stats,
-            y=metric_for_dist,
-            title=f"{metric_label(metric_for_dist)} – Box Plot",
-        )
-        col2.plotly_chart(fig_box, use_container_width=True)
+#         fig_hist = px.histogram(
+#             df_stats,
+#             x=metric_for_dist,
+#             nbins=20,
+#             title=f"{metric_label(metric_for_dist)} – Histogram",
+#         )
+#         fig_hist.add_vline(
+#             x=benchmark[metric_for_dist],
+#             line_dash="dash",
+#             annotation_text="Median",
+#             annotation_position="top left",
+#         )
+#         col1.plotly_chart(fig_hist, use_container_width=True)
 
-    # -------------------------------
-    # Tab 2 – Correlation
-    # -------------------------------
-    with tab2:
-        st.markdown("### 🔗 Correlation Heatmap (Team-level metrics)")
+#         fig_box = px.box(
+#             df_stats,
+#             y=metric_for_dist,
+#             title=f"{metric_label(metric_for_dist)} – Box Plot",
+#         )
+#         col2.plotly_chart(fig_box, use_container_width=True)
 
-        corr_df = df_stats[TEAM_METRICS].corr()
+#     # -------------------------------
+#     # Tab 2 – Correlation
+#     # -------------------------------
+#     with tab2:
+#         st.markdown("### 🔗 Correlation Heatmap (Team-level metrics)")
 
-        fig_corr = px.imshow(
-            corr_df,
-            x=[metric_label(c) for c in TEAM_METRICS],
-            y=[metric_label(c) for c in TEAM_METRICS],
-            color_continuous_scale="RdBu",
-            origin="lower",
-            title="Correlation between Metrics",
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
+#         corr_df = df_stats[TEAM_METRICS].corr()
 
-        st.markdown("### Scatter – Explore relationships")
+#         fig_corr = px.imshow(
+#             corr_df,
+#             x=[metric_label(c) for c in TEAM_METRICS],
+#             y=[metric_label(c) for c in TEAM_METRICS],
+#             color_continuous_scale="RdBu",
+#             origin="lower",
+#             title="Correlation between Metrics",
+#         )
+#         st.plotly_chart(fig_corr, use_container_width=True)
 
-        x_metric = st.selectbox(
-            "X-axis metric:",
-            TEAM_METRICS,
-            index=TEAM_METRICS.index("avg_points_scored"),
-            format_func=metric_label,
-        )
-        y_metric = st.selectbox(
-            "Y-axis metric:",
-            TEAM_METRICS,
-            index=TEAM_METRICS.index("avg_points_allowed"),
-            format_func=metric_label,
-        )
+#         st.markdown("### Scatter – Explore relationships")
 
-        fig_sc = px.scatter(
-            df_stats,
-            x=x_metric,
-            y=y_metric,
-            hover_name="team_name",
-            title=f"{metric_label(x_metric)} vs {metric_label(y_metric)}",
-        )
-        st.plotly_chart(fig_sc, use_container_width=True)
+#         x_metric = st.selectbox(
+#             "X-axis metric:",
+#             TEAM_METRICS,
+#             index=TEAM_METRICS.index("avg_points_scored"),
+#             format_func=metric_label,
+#         )
+#         y_metric = st.selectbox(
+#             "Y-axis metric:",
+#             TEAM_METRICS,
+#             index=TEAM_METRICS.index("avg_points_allowed"),
+#             format_func=metric_label,
+#         )
 
-    # -------------------------------
-    # Tab 3 – Clustering
-    # -------------------------------
-    with tab3:
-        st.markdown("### 🧬 Clustering – Group teams by style / performance")
+#         fig_sc = px.scatter(
+#             df_stats,
+#             x=x_metric,
+#             y=y_metric,
+#             hover_name="team_name",
+#             title=f"{metric_label(x_metric)} vs {metric_label(y_metric)}",
+#         )
+#         st.plotly_chart(fig_sc, use_container_width=True)
 
-        cluster_metrics = st.multiselect(
-            "Choose 2–8 metrics for clustering:",
-            TEAM_METRICS,
-            default=[
-                "win_pct",
-                "avg_points_scored",
-                "avg_points_allowed",
-                "avg_total_yards",
-                "avg_yards_allowed",
-            ],
-            format_func=metric_label,
-        )
+#     # -------------------------------
+#     # Tab 3 – Clustering
+#     # -------------------------------
+#     with tab3:
+#         st.markdown("### 🧬 Clustering – Group teams by style / performance")
 
-        if len(cluster_metrics) < 2:
-            st.info("Please select at least 2 metrics for clustering.")
-        else:
-            k = st.slider("Number of clusters (k)", min_value=2, max_value=6, value=3)
+#         cluster_metrics = st.multiselect(
+#             "Choose 2–8 metrics for clustering:",
+#             TEAM_METRICS,
+#             default=[
+#                 "win_pct",
+#                 "avg_points_scored",
+#                 "avg_points_allowed",
+#                 "avg_total_yards",
+#                 "avg_yards_allowed",
+#             ],
+#             format_func=metric_label,
+#         )
 
-            X = df_stats[cluster_metrics].fillna(df_stats[cluster_metrics].median())
-            X_std = (X - X.mean()) / X.std(ddof=0)
+#         if len(cluster_metrics) < 2:
+#             st.info("Please select at least 2 metrics for clustering.")
+#         else:
+#             k = st.slider("Number of clusters (k)", min_value=2, max_value=6, value=3)
 
-            km = KMeans(n_clusters=k, random_state=42, n_init="auto")
-            labels = km.fit_predict(X_std)
+#             X = df_stats[cluster_metrics].fillna(df_stats[cluster_metrics].median())
+#             X_std = (X - X.mean()) / X.std(ddof=0)
 
-            df_cluster = df_stats.copy()
-            df_cluster["cluster"] = labels
+#             km = KMeans(n_clusters=k, random_state=42, n_init="auto")
+#             labels = km.fit_predict(X_std)
 
-            st.markdown("#### Cluster assignment table")
-            st.dataframe(
-                df_cluster[["team_name", "cluster"] + cluster_metrics],
-                use_container_width=True,
-                hide_index=True,
-            )
+#             df_cluster = df_stats.copy()
+#             df_cluster["cluster"] = labels
 
-            st.markdown("#### 2D projection for visualization")
+#             st.markdown("#### Cluster assignment table")
+#             st.dataframe(
+#                 df_cluster[["team_name", "cluster"] + cluster_metrics],
+#                 use_container_width=True,
+#                 hide_index=True,
+#             )
 
-            x_metric = cluster_metrics[0]
-            y_metric = cluster_metrics[1]
+#             st.markdown("#### 2D projection for visualization")
 
-            fig_cluster = px.scatter(
-                df_cluster,
-                x=x_metric,
-                y=y_metric,
-                color="cluster",
-                hover_name="team_name",
-                title=f"Clusters by {metric_label(x_metric)} & {metric_label(y_metric)}",
-            )
-            st.plotly_chart(fig_cluster, use_container_width=True)
-"""
+#             x_metric = cluster_metrics[0]
+#             y_metric = cluster_metrics[1]
+
+#             fig_cluster = px.scatter(
+#                 df_cluster,
+#                 x=x_metric,
+#                 y=y_metric,
+#                 color="cluster",
+#                 hover_name="team_name",
+#                 title=f"Clusters by {metric_label(x_metric)} & {metric_label(y_metric)}",
+#             )
+#             st.plotly_chart(fig_cluster, use_container_width=True)

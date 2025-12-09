@@ -2115,8 +2115,8 @@ elif page == "3. Ranking Evolution":
         )
     
     st.markdown("---")
-    
-     # ========================================================================
+
+    # ========================================================================
     # 3-3) Individual Team Ranking History
     # ========================================================================
     st.markdown("### 📈 Individual Team Ranking History")
@@ -2197,6 +2197,73 @@ elif page == "3. Ranking Evolution":
 
         st.markdown("---")
 
+    # ========================================================================
+    # 3-5) Understanding Bradley-Terry Rankings
+    # ========================================================================
+    with st.expander("📚 About Bradley-Terry Rankings"):
+        st.markdown("""
+        ### 🧮 What is Bradley-Terry Model?
+        
+        The **Bradley-Terry model** is a statistical method for ranking teams based on pairwise comparisons (head-to-head games).
+        
+        #### 🔍 How It Works:
+        
+        1. **Pairwise Comparisons**: Each game is a comparison between two teams
+        2. **Probability-Based**: Models the probability that Team A beats Team B
+        3. **Strength Parameter**: Each team has a "strength" value
+        4. **Iterative Calculation**: Rankings emerge from solving a system of equations
+        
+        #### 📊 Key Components:
+        
+        **Strength (θ)**
+        - Numerical value representing team's ability
+        - Higher strength = better team
+        - Typically ranges from ~0.5 to ~2.0
+        - League average ≈ 1.0
+        
+        **Rank**
+        - Ordinal position (1st, 2nd, 3rd, ...)
+        - Based on strength values
+        - Lower number = better
+        
+        **Win Probability vs Average**
+        - Chance of beating an average team (strength = 1.0)
+        - Example: 65% means favored against average opponent
+        
+        #### ✅ Advantages:
+        
+        - **Objective**: Based purely on game results
+        - **Accounts for Schedule**: Beating strong teams matters more
+        - **Transitive**: If A > B and B > C, then A > C (usually)
+        - **No Human Bias**: No voting or subjective opinions
+        
+        #### ⚠️ Limitations:
+        
+        - **No Context**: Doesn't know about injuries, weather, momentum
+        - **Assumes Consistency**: Doesn't account for teams improving/declining
+        - **Sample Size**: Early season rankings less reliable
+        - **Close Games**: Treats 1-point win same as blowout
+        
+        #### 🆚 vs Traditional Polls:
+        
+        | Aspect | Bradley-Terry | AP/Coaches Poll |
+        |--------|---------------|-----------------|
+        | **Method** | Statistical model | Human votes |
+        | **Objectivity** | 100% objective | Subjective |
+        | **Schedule Aware** | Yes, built-in | Voters may consider |
+        | **Recency Bias** | No | Yes (recent games weighted more) |
+        | **Eye Test** | No | Yes (quality of play matters) |
+        | **Lag** | Updated frequently | Weekly updates |
+        
+        #### 💡 Best Use:
+        
+        - **For Analysis**: Most objective measure of team strength
+        - **For Predictions**: Good for forecasting game outcomes
+        - **For Comparison**: Pair with AP/Coaches to get full picture
+        
+        **Bottom Line:** Bradley-Terry gives you the "math says," while polls give you "experts say." 
+        Truth often lies somewhere in between!
+        """)
 
 # ============================================================================
 # 4. Head-to-Head Comparison

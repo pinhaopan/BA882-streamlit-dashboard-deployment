@@ -2029,6 +2029,93 @@ elif page == "3. Ranking Evolution":
     
     st.markdown("---")
     
+    # ========================================================================
+    # 3-2) Top 25 Rankings Table
+    # ========================================================================
+    st.markdown("### 📊 Top 25 Teams - Bradley-Terry Rankings")
+    
+    # Merge with team stats for context
+    df_top25 = df_rank_now.head(25).copy()
+    df_top25 = df_top25.merge(
+        df_stats[['team_id', 'wins', 'losses', 'win_pct', 'point_differential', 'avg_points_scored', 'avg_points_allowed']], 
+        on='team_id', 
+        how='left'
+    )
+    
+    # Create display dataframe
+    display_df = df_top25[[
+        'rank', 'team_name', 'strength', 'wins', 'losses', 'win_pct', 
+        'point_differential', 'avg_points_scored', 'avg_points_allowed'
+    ]].copy()
+    
+    # Add AI summary indicator
+    @st.cache_data
+    def get_teams_with_summaries():
+        """Get list of team_ids that have AI summaries"""
+        sql = "SELECT DISTINCT team_id FROM bt.team_summaries"
+        result = run_query(sql)
+        return set(result['team_id'].tolist())
+    
+    teams_with_ai = get_teams_with_summaries()
+    display_df['AI Analysis'] = display_df.apply(
+        lambda row: "✅" if df_top25[df_top25['rank'] == row['rank']].iloc[0]['team_id'] in teams_with_ai else "—",
+        axis=1
+    )
+    
+    st.dataframe(
+        display_df.rename(columns={
+            'rank': 'Rank',
+            'team_name': 'Team',
+            'strength': 'B-T Strength',
+            'wins': 'W',
+            'losses': 'L',
+            'win_pct': 'Win %',
+            'point_differential': 'Pt Diff',
+            'avg_points_scored': 'Avg Pts',
+            'avg_points_allowed': 'Avg PA'
+        }),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Rank": st.column_config.NumberColumn(format="%d"),
+            "B-T Strength": st.column_config.NumberColumn(format="%.3f"),
+            "W": st.column_config.NumberColumn(format="%d"),
+            "L": st.column_config.NumberColumn(format="%d"),
+            "Win %": st.column_config.NumberColumn(format="%.3f"),
+            "Pt Diff": st.column_config.NumberColumn(format="%+.1f"),
+            "Avg Pts": st.column_config.NumberColumn(format="%.1f"),
+            "Avg PA": st.column_config.NumberColumn(format="%.1f"),
+        },
+        height=600
+    )
+    
+    st.caption("✅ = AI analysis available | Click a rank in the selector above to read the analysis")
+    
+    # Show expandable full rankings
+    with st.expander("📋 View Full Rankings (All Teams)"):
+        df_all_display = df_rank_now.merge(
+            df_stats[['team_id', 'wins', 'losses', 'win_pct']], 
+            on='team_id', 
+            how='left'
+        )
+        
+        st.dataframe(
+            df_all_display[['rank', 'team_name', 'strength', 'prob_vs_avg', 'wins', 'losses', 'win_pct']].rename(columns={
+                'rank': 'Rank',
+                'team_name': 'Team',
+                'strength': 'Strength',
+                'prob_vs_avg': 'Win % vs Avg',
+                'wins': 'W',
+                'losses': 'L',
+                'win_pct': 'Win %'
+            }),
+            use_container_width=True,
+            hide_index=True,
+            height=400
+        )
+    
+    st.markdown("---")
+    
 
 
 # ============================================================================

@@ -1979,17 +1979,18 @@ elif page == "3. Ranking Evolution":
                 # Display summary in an attractive format
                 st.markdown(f"""
                 <div style="
-                    background-color: #f0f2f6; 
+                    background-color: var(--background-color, #f0f2f6); 
+                    color: var(--text-color, #262730);
                     padding: 20px; 
                     border-radius: 10px; 
-                    border-left: 5px solid #1f77b4;
+                    border-left: 5px solid var(--primary-color, #1f77b4);
                     min-height: 200px;
                 ">
-                    <h4 style="margin-top: 0;">📊 {selected_team_name}</h4>
-                    <p style="font-size: 16px; line-height: 1.6;">
+                    <h4 style="margin-top: 0; color: inherit;">📊 {selected_team_name}</h4>
+                    <p style="font-size: 16px; line-height: 1.6; color: inherit;">
                         {team_summary['summary']}
                     </p>
-                    <p style="font-size: 12px; color: #666; margin-bottom: 0;">
+                    <p style="font-size: 12px; color: var(--secondary-text-color, #666); margin-bottom: 0;">
                         <em>Analysis generated: {team_summary['updated_at'].strftime('%B %d, %Y')}</em>
                     </p>
                 </div>

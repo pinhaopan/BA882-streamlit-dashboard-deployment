@@ -1961,10 +1961,11 @@ elif page == "3. Ranking Evolution":
                 """Load LLM-generated team summary from bt.team_summaries"""
                 sql = """
                     SELECT
-                        team_id,
-                        summary,
-                        updated_at
-                    FROM bt.team_summaries
+                        ts.team_id,
+                        ts.summary,
+                        r.updated_at
+                    FROM bt.team_summaries AS ts
+                    LEFT JOIN bt.rankings AS r ON ts.team_id = r.team_id
                     WHERE team_id = ?
                 """
                 result = run_query(sql, (int(team_id),))
